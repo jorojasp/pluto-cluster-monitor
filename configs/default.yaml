@@ -1,0 +1,26 @@
+app:
+  name: pluto-cluster-monitor
+  mode: SineWave
+  update_period_s: 0.1
+
+rf:
+  center_frequency_hz: 2400000000
+  sample_rate_hz: 1000000
+  samples_per_frame: 4096
+  rx_gain_db: 30
+  tx_gain_db: -12
+  sps: 2
+  data_bits: 4096
+
+clusters:
+  receivers_per_group: 1
+  groups:
+    A:
+      radio_ids: ["usb:0"]
+    B:
+      radio_ids: ["usb:1"]
+  transmitter_radio_id: "usb:2"
+
+runtime:
+  export_dir: data/exports
+  log_dir: data/logs

@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.venv/
+venv/
+env/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project data
+data/raw/*
+data/processed/*
+data/exports/*
+data/logs/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/exports/.gitkeep
+!data/logs/.gitkeep
+
+# Config overrides
+configs/local.yaml
+.env
