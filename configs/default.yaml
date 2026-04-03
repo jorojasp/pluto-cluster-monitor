@@ -11,16 +11,19 @@ rf:
   tx_gain_db: -12
   sps: 2
   data_bits: 4096
+  tone_frequency_hz: 10000
 
 clusters:
-  receivers_per_group: 1
   groups:
     A:
-      radio_ids: ["usb:0"]
-    B:
-      radio_ids: ["usb:1"]
-  transmitter_radio_id: "usb:2"
+      radio_serials:
+        - "10447318ac0f001306002d006957176fa7"
+    #B:
+    #  radio_serials:
+    #    - "10447318ac0f001306002d006957176fa7"
+  transmitter_serial: "10447318ac0f0003feff3200a5691709e5"
 
 runtime:
   export_dir: data/exports
   log_dir: data/logs
+  max_history_points: 100

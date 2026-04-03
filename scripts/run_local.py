@@ -1,5 +1,5 @@
-from pluto_monitor.app import run_once
+from pluto_monitor.app import run_continuous
 
 
 if __name__ == "__main__":
-    run_once()
+    run_continuous()
