@@ -17,11 +17,14 @@ clusters:
   groups:
     A:
       radio_serials:
-        - "10447318ac0f001306002d006957176fa7"
-    #B:
-    #  radio_serials:
-    #    - "10447318ac0f001306002d006957176fa7"
-  transmitter_serial: "10447318ac0f0003feff3200a5691709e5"
+        - "104473e6a60f00020a003000c60e16e28d"
+        - "104473e6a60f0002090007007d131693c2"
+    B:
+      radio_serials:
+        - "10447318ac0f000e1e002c005e141855c8"
+        - "10447318ac0f0003feff3200a5691709e5"
+
+  transmitter_serial: "10447318ac0f001306002d006957176fa7"
 
 runtime:
   export_dir: data/exports

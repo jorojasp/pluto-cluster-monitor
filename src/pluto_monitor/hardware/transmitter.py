@@ -12,7 +12,6 @@ class TransmitterConfig:
     sample_rate_hz: int
     tx_gain_db: float
 
-
 class PlutoTransmitter:
     def __init__(self, config: TransmitterConfig) -> None:
         self.config = config
@@ -45,8 +44,7 @@ class PlutoTransmitter:
         self._device.tx_destroy_buffer()
         self._device.tx(iq)
 
-    def build_tone(
-        self,
+    def build_tone(self,
         tone_frequency_hz: float,
         num_samples: int,
     ) -> np.ndarray:
