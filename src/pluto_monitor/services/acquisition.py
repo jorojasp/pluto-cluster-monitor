@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+from pluto_monitor.dsp.bpsk import compute_bpsk_metrics
 from pluto_monitor.dsp.sinewave import compute_sinewave_metrics
 from pluto_monitor.hardware.receiver import PlutoReceiver
 from pluto_monitor.services.clustering import GroupSummary, summarize_group
@@ -17,9 +18,30 @@ class AcquisitionResult:
     strongest_group: str
 
 
+def _compute_metrics_for_mode(
+    iq,
+    mode: str,
+    rf_config: dict,
+) -> tuple[float, float]:
+    if mode == "SineWave":
+        return compute_sinewave_metrics(iq)
+
+    if mode == "BPSK":
+        return compute_bpsk_metrics(
+            iq=iq,
+            sample_rate_hz=rf_config["sample_rate_hz"],
+            data_bits=rf_config["data_bits"],
+            sps=rf_config["sps"],
+        )
+
+    raise NotImplementedError(f"Mode {mode} is not implemented in acquisition")
+
+
 def acquire_once(
     groups: dict[str, dict],
     receivers: dict[str, PlutoReceiver],
+    mode: str,
+    rf_config: dict,
 ) -> AcquisitionResult:
     timestamp = time.time()
     group_powers: dict[str, dict[str, float]] = {}
@@ -36,7 +58,12 @@ def acquire_once(
         for radio_id in group_data["radio_ids"]:
             receiver = receivers[radio_id]
             iq = receiver.read_samples()
-            power_db, snr_db = compute_sinewave_metrics(iq)
+
+            power_db, snr_db = _compute_metrics_for_mode(
+                iq=iq,
+                mode=mode,
+                rf_config=rf_config,
+            )
 
             power_map[radio_id] = power_db
             snr_map[radio_id] = snr_db

@@ -69,6 +69,43 @@ def build_transmitter(
     return transmitter
 
 
+def build_tx_waveform(
+    transmitter: PlutoTransmitter,
+    config: dict,
+) -> tuple[str, object]:
+    """
+    Build the transmit waveform according to the selected mode.
+
+    Returns:
+        mode: selected mode
+        tx_debug: optional debug data (bits/symbols for digital modes)
+    """
+    app_cfg = config["app"]
+    rf = config["rf"]
+    mode = app_cfg["mode"]
+
+    if mode == "SineWave":
+        tx_waveform = transmitter.build_tone(
+            tone_frequency_hz=rf["tone_frequency_hz"],
+            num_samples=rf["samples_per_frame"],
+        )
+        transmitter.transmit_repeat(tx_waveform)
+        return mode, None
+
+    if mode == "BPSK":
+        tx_waveform, tx_bits, tx_symbols = transmitter.build_bpsk(
+            data_bits=rf["data_bits"],
+            sps=rf["sps"],
+        )
+        transmitter.transmit_repeat(tx_waveform)
+        return mode, {
+            "tx_bits": tx_bits,
+            "tx_symbols": tx_symbols,
+        }
+
+    raise NotImplementedError(f"Mode {mode} is not implemented yet in Python")
+
+
 def print_result(result) -> None:
     print(f"\nTimestamp: {result.timestamp:.3f}")
 
@@ -95,7 +132,6 @@ def run_continuous(config_path: str = "configs/default.yaml") -> None:
     config = load_config(config_path)
     validate_required_radios(config)
 
-    rf = config["rf"]
     app_cfg = config["app"]
 
     receivers: dict[str, PlutoReceiver] = {}
@@ -121,17 +157,16 @@ def run_continuous(config_path: str = "configs/default.yaml") -> None:
         transmitter = build_transmitter(config, resolved)
         print(f"Connected TX radio: {transmitter.config.radio_id}")
 
-        if app_cfg["mode"] != "SineWave":
-            raise NotImplementedError(
-                f"Mode {app_cfg['mode']} is not implemented yet in Python"
-            )
+        print(f"Starting transmission for mode: {app_cfg['mode']}")
+        mode, tx_debug = build_tx_waveform(transmitter, config)
 
-        print("Starting tone transmission...")
-        tone = transmitter.build_tone(
-            tone_frequency_hz=rf["tone_frequency_hz"],
-            num_samples=rf["samples_per_frame"],
-        )
-        transmitter.transmit_repeat(tone)
+        if mode == "BPSK" and tx_debug is not None:
+            tx_bits = tx_debug["tx_bits"]
+            tx_symbols = tx_debug["tx_symbols"]
+            print(
+                f"BPSK TX ready: payload_bits={len(tx_bits)}, "
+                f"total_symbols={len(tx_symbols)}"
+            )
 
         update_period_s = float(app_cfg["update_period_s"])
         print("Starting acquisition loop. Press Ctrl+C to stop.")
@@ -142,7 +177,12 @@ def run_continuous(config_path: str = "configs/default.yaml") -> None:
         }
 
         while True:
-            result = acquire_once(groups=acquisition_groups, receivers=receivers)
+            result = acquire_once(
+                groups=acquisition_groups,
+                receivers=receivers,
+                mode=mode,
+                rf_config=config["rf"],
+            )
             history.append(result.timestamp, result.group_summaries)
             print_result(result)
             time.sleep(update_period_s)

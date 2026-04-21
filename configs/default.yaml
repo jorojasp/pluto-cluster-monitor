@@ -1,6 +1,6 @@
 app:
   name: pluto-cluster-monitor
-  mode: SineWave
+  mode: BPSK
   update_period_s: 0.1
 
 rf:

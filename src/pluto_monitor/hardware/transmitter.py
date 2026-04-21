@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pluto_monitor.dsp.bpsk import build_bpsk_tx_waveform
 
 import numpy as np
 
@@ -52,6 +53,17 @@ class PlutoTransmitter:
         t = np.arange(num_samples, dtype=np.float64) / sample_rate
         tone = np.exp(1j * 2.0 * np.pi * tone_frequency_hz * t)
         return tone.astype(np.complex64)
+    
+    def build_bpsk(
+        self,
+        data_bits: int,
+        sps: int,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        tx_waveform, tx_bits, tx_symbols = build_bpsk_tx_waveform(
+            data_bits=data_bits,
+            sps=sps,
+        )
+        return tx_waveform, tx_bits, tx_symbols
 
     def stop(self) -> None:
         if self._device is None:
