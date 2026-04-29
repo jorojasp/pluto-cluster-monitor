@@ -30,10 +30,6 @@ def _extract_serial(description: str) -> str:
 
 
 def _uri_priority(uri: str) -> tuple[int, str]:
-    """
-    Lower tuple wins.
-    Prefer USB contexts over IP contexts, then anything else.
-    """
     uri_lower = uri.lower()
 
     if uri_lower.startswith("usb:"):

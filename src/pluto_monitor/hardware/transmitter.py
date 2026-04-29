@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pluto_monitor.dsp.bpsk import build_bpsk_tx_waveform
+from pluto_monitor.dsp.qpsk import build_qpsk_tx_waveform
 
 import numpy as np
 
@@ -60,6 +61,17 @@ class PlutoTransmitter:
         sps: int,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         tx_waveform, tx_bits, tx_symbols = build_bpsk_tx_waveform(
+            data_bits=data_bits,
+            sps=sps,
+        )
+        return tx_waveform, tx_bits, tx_symbols
+    
+    def build_qpsk(
+        self,
+        data_bits: int,
+        sps: int,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        tx_waveform, tx_bits, tx_symbols = build_qpsk_tx_waveform(
             data_bits=data_bits,
             sps=sps,
         )

@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass
 
 from pluto_monitor.dsp.bpsk import compute_bpsk_metrics
+from pluto_monitor.dsp.qpsk import compute_qpsk_metrics
 from pluto_monitor.dsp.sinewave import compute_sinewave_metrics
 from pluto_monitor.hardware.receiver import PlutoReceiver
 from pluto_monitor.services.clustering import GroupSummary, summarize_group
@@ -28,6 +29,14 @@ def _compute_metrics_for_mode(
 
     if mode == "BPSK":
         return compute_bpsk_metrics(
+            iq=iq,
+            sample_rate_hz=rf_config["sample_rate_hz"],
+            data_bits=rf_config["data_bits"],
+            sps=rf_config["sps"],
+        )
+    
+    if mode == "QPSK":
+        return compute_qpsk_metrics(
             iq=iq,
             sample_rate_hz=rf_config["sample_rate_hz"],
             data_bits=rf_config["data_bits"],

@@ -1,6 +1,6 @@
 app:
   name: pluto-cluster-monitor
-  mode: BPSK
+  mode: QPSK
   update_period_s: 0.1
 
 rf:

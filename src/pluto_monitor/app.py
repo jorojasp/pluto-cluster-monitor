@@ -73,13 +73,6 @@ def build_tx_waveform(
     transmitter: PlutoTransmitter,
     config: dict,
 ) -> tuple[str, object]:
-    """
-    Build the transmit waveform according to the selected mode.
-
-    Returns:
-        mode: selected mode
-        tx_debug: optional debug data (bits/symbols for digital modes)
-    """
     app_cfg = config["app"]
     rf = config["rf"]
     mode = app_cfg["mode"]
@@ -102,6 +95,18 @@ def build_tx_waveform(
             "tx_bits": tx_bits,
             "tx_symbols": tx_symbols,
         }
+    
+    if mode == "QPSK":
+        tx_waveform, tx_bits, tx_symbols = transmitter.build_qpsk(
+            data_bits=rf["data_bits"],
+            sps=rf["sps"],
+        )
+        transmitter.transmit_repeat(tx_waveform)
+        return mode, {
+            "tx_bits": tx_bits,
+            "tx_symbols": tx_symbols,
+        }   
+    
 
     raise NotImplementedError(f"Mode {mode} is not implemented yet in Python")
 
@@ -160,7 +165,7 @@ def run_continuous(config_path: str = "configs/default.yaml") -> None:
         print(f"Starting transmission for mode: {app_cfg['mode']}")
         mode, tx_debug = build_tx_waveform(transmitter, config)
 
-        if mode == "BPSK" and tx_debug is not None:
+        if mode in ("BPSK", "QPSK") and tx_debug is not None:
             tx_bits = tx_debug["tx_bits"]
             tx_symbols = tx_debug["tx_symbols"]
             print(

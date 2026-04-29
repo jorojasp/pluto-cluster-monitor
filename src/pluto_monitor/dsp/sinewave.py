@@ -7,11 +7,7 @@ def compute_sinewave_metrics(
     iq: np.ndarray,
     eps: float = 1e-12,
 ) -> tuple[float, float]:
-    """
-    Returns:
-        power_db: received power in dB
-        snr_db: estimated SNR in dB
-    """
+
     if iq.size == 0:
         return float("nan"), float("nan")
 
