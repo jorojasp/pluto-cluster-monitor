@@ -277,9 +277,6 @@ def compute_qpsk_metrics(
         h_est=a,
     )
 
-    if preamble_err_ratio > 2.0:
-        return power_db, float("nan")
-
     data_start = pre_end
     max_symbols = len(symbol_seq) - data_start
     max_payload_symbols = data_bits // 2
@@ -296,7 +293,6 @@ def compute_qpsk_metrics(
 
     ref_power = float(np.mean(np.abs(ref_symbols) ** 2))
     noise_power = float(np.mean(np.abs(noise_err) ** 2))
-
     if ref_power <= 0 or noise_power <= 0:
         return power_db, float("nan")
 

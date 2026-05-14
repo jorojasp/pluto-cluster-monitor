@@ -244,9 +244,6 @@ def compute_bpsk_metrics(
         h_est=a,
     )
 
-    if preamble_err_ratio > 2.0:
-        return power_db, float("nan")
-
     data_start = pre_end
     max_symbols = len(symbol_seq) - data_start
     ndata = min(int(data_bits), int(max_symbols))
