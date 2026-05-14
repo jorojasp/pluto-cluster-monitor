@@ -5,10 +5,10 @@ from dataclasses import dataclass
 
 from pluto_monitor.dsp.bpsk import compute_bpsk_metrics
 from pluto_monitor.dsp.qpsk import compute_qpsk_metrics
+from pluto_monitor.dsp.qam16 import compute_qam16_metrics
 from pluto_monitor.dsp.sinewave import compute_sinewave_metrics
 from pluto_monitor.hardware.receiver import PlutoReceiver
 from pluto_monitor.services.clustering import GroupSummary, summarize_group
-
 
 @dataclass
 class AcquisitionResult:
@@ -37,6 +37,14 @@ def _compute_metrics_for_mode(
     
     if mode == "QPSK":
         return compute_qpsk_metrics(
+            iq=iq,
+            sample_rate_hz=rf_config["sample_rate_hz"],
+            data_bits=rf_config["data_bits"],
+            sps=rf_config["sps"],
+        )
+    
+    if mode == "16QAM":
+        return compute_qam16_metrics(
             iq=iq,
             sample_rate_hz=rf_config["sample_rate_hz"],
             data_bits=rf_config["data_bits"],

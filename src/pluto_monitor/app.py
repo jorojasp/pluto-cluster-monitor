@@ -95,7 +95,7 @@ def build_tx_waveform(
             "tx_bits": tx_bits,
             "tx_symbols": tx_symbols,
         }
-    
+
     if mode == "QPSK":
         tx_waveform, tx_bits, tx_symbols = transmitter.build_qpsk(
             data_bits=rf["data_bits"],
@@ -105,8 +105,18 @@ def build_tx_waveform(
         return mode, {
             "tx_bits": tx_bits,
             "tx_symbols": tx_symbols,
-        }   
-    
+        }
+
+    if mode == "16QAM":
+        tx_waveform, tx_bits, tx_symbols = transmitter.build_qam16(
+            data_bits=rf["data_bits"],
+            sps=rf["sps"],
+        )
+        transmitter.transmit_repeat(tx_waveform)
+        return mode, {
+            "tx_bits": tx_bits,
+            "tx_symbols": tx_symbols,
+        }
 
     raise NotImplementedError(f"Mode {mode} is not implemented yet in Python")
 
@@ -165,11 +175,11 @@ def run_continuous(config_path: str = "configs/default.yaml") -> None:
         print(f"Starting transmission for mode: {app_cfg['mode']}")
         mode, tx_debug = build_tx_waveform(transmitter, config)
 
-        if mode in ("BPSK", "QPSK") and tx_debug is not None:
+        if mode in ("BPSK", "QPSK", "16QAM") and tx_debug is not None:
             tx_bits = tx_debug["tx_bits"]
             tx_symbols = tx_debug["tx_symbols"]
             print(
-                f"BPSK TX ready: payload_bits={len(tx_bits)}, "
+                f"{mode} TX ready: payload_bits={len(tx_bits)}, "
                 f"total_symbols={len(tx_symbols)}"
             )
 
