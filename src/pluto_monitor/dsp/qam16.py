@@ -146,9 +146,60 @@ def build_qam16_tx_waveform(
 
 
 def _matched_filter(iq: np.ndarray, sps: int) -> np.ndarray:
+    iq = _agc_normalize(iq)
+
     h = raised_cosine_filter(sps=sps, span=2, beta=0.35)
     y = signal.lfilter(h, [1.0], iq)
+
+    group_delay = (len(h) - 1) // 2
+    if group_delay < len(y):
+        y = y[group_delay:]
+
     return y.astype(np.complex64)
+
+def _agc_normalize(iq: np.ndarray, eps: float = 1e-12) -> np.ndarray:
+    iq = np.asarray(iq, dtype=np.complex64)
+    p = np.mean(np.abs(iq) ** 2)
+    if p <= eps:
+        return iq
+    return (iq / np.sqrt(p + eps)).astype(np.complex64)
+
+
+def _estimate_symbol_phase_drift(
+    rx_preamble: np.ndarray,
+    rep_len: int,
+    eps: float = 1e-12,
+) -> float:
+    if len(rx_preamble) < 3 * rep_len:
+        return 0.0
+
+    rep1 = rx_preamble[0:rep_len]
+    rep2 = rx_preamble[rep_len:2 * rep_len]
+    rep3 = rx_preamble[2 * rep_len:3 * rep_len]
+
+    c12 = np.vdot(rep1, rep2)
+    c23 = np.vdot(rep2, rep3)
+
+    if abs(c12) < eps or abs(c23) < eps:
+        return 0.0
+
+    phi12 = np.angle(c12)
+    phi23 = np.angle(c23)
+
+    avg_rep_phase = 0.5 * (phi12 + phi23)
+    phase_per_symbol = avg_rep_phase / rep_len
+
+    return float(phase_per_symbol)
+
+
+def _apply_symbol_phase_drift_correction(
+    symbols: np.ndarray,
+    phase_per_symbol: float,
+    reference_index: int = 0,
+) -> np.ndarray:
+    n = np.arange(len(symbols), dtype=np.float64) - float(reference_index)
+    rot = np.exp(-1j * phase_per_symbol * n)
+    return (symbols * rot).astype(np.complex64)
 
 
 def _best_symbol_sequence(
@@ -185,7 +236,7 @@ def compute_qam16_metrics(
     sps: int,
     eps: float = 1e-12,
 ) -> tuple[float, float]:
-    del sample_rate_hz  # reserved for later frequency-recovery stages
+    del sample_rate_hz  # reserved for future explicit frequency recovery
 
     if iq.size == 0:
         return float("nan"), float("nan")
@@ -195,6 +246,7 @@ def compute_qam16_metrics(
 
     preamble = build_barker_code_13()
     preamble_long = np.tile(preamble, 3)
+    rep_len = len(preamble)
 
     symbol_seq = _best_symbol_sequence(iq, sps=sps, preamble_long=preamble_long)
     if len(symbol_seq) < len(preamble_long) + 4:
@@ -211,6 +263,20 @@ def compute_qam16_metrics(
     if pre_end > len(symbol_seq):
         return power_db, float("nan")
 
+    # First extraction of the received preamble
+    rx_preamble = symbol_seq[pre_start:pre_end]
+
+    # Estimate progressive phase drift from repeated Barker blocks
+    phase_per_symbol = _estimate_symbol_phase_drift(rx_preamble, rep_len=rep_len)
+
+    # Correct the whole symbol sequence using the preamble start as reference
+    symbol_seq = _apply_symbol_phase_drift_correction(
+        symbol_seq,
+        phase_per_symbol=phase_per_symbol,
+        reference_index=pre_start,
+    )
+
+    # Recompute preamble after phase-drift correction
     rx_preamble = symbol_seq[pre_start:pre_end]
 
     denom = np.vdot(preamble_long, preamble_long)
