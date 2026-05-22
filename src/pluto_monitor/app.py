@@ -12,6 +12,7 @@ from pluto_monitor.hardware.receiver import PlutoReceiver, ReceiverConfig
 from pluto_monitor.hardware.transmitter import PlutoTransmitter, TransmitterConfig
 from pluto_monitor.models.history import MetricHistory
 from pluto_monitor.services.acquisition import acquire_once
+from pluto_monitor.ui.live_group_monitor import LiveGroupMonitor
 from pluto_monitor.utils.plotting import export_group_plots
 
 
@@ -132,6 +133,13 @@ def print_result(result) -> None:
             snr_db = snr_map.get(radio_uri, float("nan"))
             print(f"  {radio_uri}: {power_db:.2f} dB | SNR: {snr_db:.2f} dB")
 
+        print(
+            f"  mean group power={result.group_mean_power_db[group_name]:.2f} dB"
+        )
+        print(
+            f"  mean group noise={result.group_mean_noise_db[group_name]:.2f} dB"
+        )
+
         summary = result.group_summaries[group_name]
         print(
             f"  strongest={summary.strongest_label} ({summary.strongest_db:.2f} dB)"
@@ -152,6 +160,7 @@ def run_continuous(config_path: str = "configs/default.yaml") -> None:
     receivers: dict[str, PlutoReceiver] = {}
     resolved_groups: dict[str, list[str]] = {}
     transmitter: PlutoTransmitter | None = None
+    live_monitor: LiveGroupMonitor | None = None
 
     history = MetricHistory(
         max_points=int(config["runtime"].get("max_history_points", 100))
@@ -183,6 +192,11 @@ def run_continuous(config_path: str = "configs/default.yaml") -> None:
                 f"total_symbols={len(tx_symbols)}"
             )
 
+        if mode in ("SineWave", "BPSK", "QPSK", "16QAM"):
+            live_monitor = LiveGroupMonitor(
+                max_points=int(config["runtime"].get("max_history_points", 100))
+            )
+
         update_period_s = float(app_cfg["update_period_s"])
         print("Starting acquisition loop. Press Ctrl+C to stop.")
 
@@ -200,6 +214,10 @@ def run_continuous(config_path: str = "configs/default.yaml") -> None:
             )
             history.append(result.timestamp, result.group_summaries)
             print_result(result)
+
+            if live_monitor is not None:
+                live_monitor.update(result)
+
             time.sleep(update_period_s)
 
     except KeyboardInterrupt:
@@ -210,6 +228,9 @@ def run_continuous(config_path: str = "configs/default.yaml") -> None:
 
         if transmitter is not None:
             transmitter.close()
+
+        if live_monitor is not None:
+            live_monitor.close()
 
         export_dir = config["runtime"]["export_dir"]
         weak_path, strong_path = export_group_plots(history, export_dir)

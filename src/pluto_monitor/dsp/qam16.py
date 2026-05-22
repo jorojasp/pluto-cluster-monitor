@@ -31,10 +31,10 @@ def bits_to_integers_4(bits: np.ndarray) -> np.ndarray:
 
 def gray16qam_constellation() -> np.ndarray:
     gray2pam = {
-        0: -3,  # 00
-        1: -1,  # 01
-        3: +1,  # 11
-        2: +3,  # 10
+        0: -3,
+        1: -1,
+        3: +1,
+        2: +3,
     }
 
     const = np.zeros(16, dtype=np.complex64)
@@ -145,18 +145,6 @@ def build_qam16_tx_waveform(
     return tx_waveform.astype(np.complex64), tx_bits, tx_symbols
 
 
-def _matched_filter(iq: np.ndarray, sps: int) -> np.ndarray:
-    iq = _agc_normalize(iq)
-
-    h = raised_cosine_filter(sps=sps, span=2, beta=0.35)
-    y = signal.lfilter(h, [1.0], iq)
-
-    group_delay = (len(h) - 1) // 2
-    if group_delay < len(y):
-        y = y[group_delay:]
-
-    return y.astype(np.complex64)
-
 def _agc_normalize(iq: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     iq = np.asarray(iq, dtype=np.complex64)
     p = np.mean(np.abs(iq) ** 2)
@@ -202,6 +190,19 @@ def _apply_symbol_phase_drift_correction(
     return (symbols * rot).astype(np.complex64)
 
 
+def _matched_filter(iq: np.ndarray, sps: int) -> np.ndarray:
+    iq = _agc_normalize(iq)
+
+    h = raised_cosine_filter(sps=sps, span=2, beta=0.35)
+    y = signal.lfilter(h, [1.0], iq)
+
+    group_delay = (len(h) - 1) // 2
+    if group_delay < len(y):
+        y = y[group_delay:]
+
+    return y.astype(np.complex64)
+
+
 def _best_symbol_sequence(
     iq: np.ndarray,
     sps: int,
@@ -229,17 +230,23 @@ def _best_symbol_sequence(
     return best_seq.astype(np.complex64)
 
 
-def compute_qam16_metrics(
+def compute_qam16_detailed_metrics(
     iq: np.ndarray,
     sample_rate_hz: int,
     data_bits: int,
     sps: int,
     eps: float = 1e-12,
-) -> tuple[float, float]:
-    del sample_rate_hz  # reserved for future explicit frequency recovery
+) -> dict[str, float]:
+    del sample_rate_hz
 
     if iq.size == 0:
-        return float("nan"), float("nan")
+        return {
+            "signal_power": float("nan"),
+            "noise_power": float("nan"),
+            "power_db": float("nan"),
+            "noise_db": float("nan"),
+            "snr_db": float("nan"),
+        }
 
     signal_power = float(np.mean(np.abs(iq) ** 2))
     power_db = float(10.0 * np.log10(signal_power + eps))
@@ -250,38 +257,58 @@ def compute_qam16_metrics(
 
     symbol_seq = _best_symbol_sequence(iq, sps=sps, preamble_long=preamble_long)
     if len(symbol_seq) < len(preamble_long) + 4:
-        return power_db, float("nan")
+        return {
+            "signal_power": signal_power,
+            "noise_power": float("nan"),
+            "power_db": power_db,
+            "noise_db": float("nan"),
+            "snr_db": float("nan"),
+        }
 
     corr = np.abs(signal.correlate(symbol_seq, preamble_long.conj(), mode="valid"))
     if corr.size == 0:
-        return power_db, float("nan")
+        return {
+            "signal_power": signal_power,
+            "noise_power": float("nan"),
+            "power_db": power_db,
+            "noise_db": float("nan"),
+            "snr_db": float("nan"),
+        }
 
     peak_idx = int(np.argmax(corr))
     pre_start = peak_idx
     pre_end = pre_start + len(preamble_long)
 
     if pre_end > len(symbol_seq):
-        return power_db, float("nan")
+        return {
+            "signal_power": signal_power,
+            "noise_power": float("nan"),
+            "power_db": power_db,
+            "noise_db": float("nan"),
+            "snr_db": float("nan"),
+        }
 
-    # First extraction of the received preamble
     rx_preamble = symbol_seq[pre_start:pre_end]
 
-    # Estimate progressive phase drift from repeated Barker blocks
     phase_per_symbol = _estimate_symbol_phase_drift(rx_preamble, rep_len=rep_len)
 
-    # Correct the whole symbol sequence using the preamble start as reference
     symbol_seq = _apply_symbol_phase_drift_correction(
         symbol_seq,
         phase_per_symbol=phase_per_symbol,
         reference_index=pre_start,
     )
 
-    # Recompute preamble after phase-drift correction
     rx_preamble = symbol_seq[pre_start:pre_end]
 
     denom = np.vdot(preamble_long, preamble_long)
     if abs(denom) < eps:
-        return power_db, float("nan")
+        return {
+            "signal_power": signal_power,
+            "noise_power": float("nan"),
+            "power_db": power_db,
+            "noise_db": float("nan"),
+            "snr_db": float("nan"),
+        }
 
     h_est = np.vdot(preamble_long, rx_preamble) / denom
     if abs(h_est) < 1e-6:
@@ -293,7 +320,13 @@ def compute_qam16_metrics(
     ndata = min(int(max_payload_symbols), int(max_symbols))
 
     if ndata <= 0:
-        return power_db, float("nan")
+        return {
+            "signal_power": signal_power,
+            "noise_power": float("nan"),
+            "power_db": power_db,
+            "noise_db": float("nan"),
+            "snr_db": float("nan"),
+        }
 
     data_symbols = symbol_seq[data_start:data_start + ndata]
     data_corrected = data_symbols / h_est
@@ -305,7 +338,38 @@ def compute_qam16_metrics(
     noise_power = float(np.mean(np.abs(error_vec) ** 2))
 
     if ref_power <= 0 or noise_power <= 0:
-        return power_db, float("nan")
+        return {
+            "signal_power": signal_power,
+            "noise_power": noise_power,
+            "power_db": power_db,
+            "noise_db": float("nan"),
+            "snr_db": float("nan"),
+        }
 
+    noise_db = float(10.0 * np.log10(noise_power + eps))
     snr_db = float(10.0 * np.log10(ref_power / (noise_power + eps)))
-    return power_db, snr_db
+
+    return {
+        "signal_power": signal_power,
+        "noise_power": noise_power,
+        "power_db": power_db,
+        "noise_db": noise_db,
+        "snr_db": snr_db,
+    }
+
+
+def compute_qam16_metrics(
+    iq: np.ndarray,
+    sample_rate_hz: int,
+    data_bits: int,
+    sps: int,
+    eps: float = 1e-12,
+) -> tuple[float, float]:
+    metrics = compute_qam16_detailed_metrics(
+        iq=iq,
+        sample_rate_hz=sample_rate_hz,
+        data_bits=data_bits,
+        sps=sps,
+        eps=eps,
+    )
+    return metrics["power_db"], metrics["snr_db"]

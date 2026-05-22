@@ -1,6 +1,6 @@
 app:
   name: pluto-cluster-monitor
-  mode: BPSK
+  mode: 16QAM
   update_period_s: 0.1
 
 rf:
@@ -17,16 +17,16 @@ clusters:
   groups:
     A:
       radio_serials:
-        #- "10447318ac0f00031b002c00a5691798a1" 
-        - "104473e6a60f0002090007007d131693c2" 
-        - "104473e6a60f00020a003000c60e16e28d"
+        - "10447318ac0f00031b002c00a5691798a1"
+        #- "104473e6a60f0002090007007d131693c2" 
+        #- "104473e6a60f00020a003000c60e16e28d"
     B:
       radio_serials:
-        - "10447318ac0f000e1e002c005e141855c8"
-        - "10447318ac0f0003feff3200a5691709e5"
-        #- "104473e6a60f0002ebff24007b1316e1f2"
+        #- "10447318ac0f000e1e002c005e141855c8"
+        #- "10447318ac0f0003feff3200a5691709e5"
+        - "104473e6a60f0002ebff24007b1316e1f2"
 
-  transmitter_serial: "10447318ac0f001306002d006957176fa7" #"10447318ac0f0016edff2400667f1737dc" 
+  transmitter_serial: "10447318ac0f0016f0ff1c0098871770ca" #"10447318ac0f0016edff2400667f1737dc" #"10447318ac0f001306002d006957176fa7" 
 
 runtime:
   export_dir: data/exports
