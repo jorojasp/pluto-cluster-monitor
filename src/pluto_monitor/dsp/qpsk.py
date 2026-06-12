@@ -3,17 +3,34 @@ from __future__ import annotations
 import numpy as np
 from scipy import signal
 
+# Minimum normalized preamble correlation peak required to accept a
+# detection as a real preamble (rather than a spurious peak on noise).
+# Empirically, pure noise yields ~0.4; SNR>=0 dB yields >=0.87.
+MIN_PREAMBLE_CORR = 0.5
 
-def build_qpsk_barker_bits() -> np.ndarray:
-    bits = np.array(
+
+def build_qpsk_preamble_long() -> np.ndarray:
+    """Build a 39-symbol QPSK preamble with good autocorrelation.
+
+    Reuses the 13-chip Barker code (the same one used for BPSK/16QAM
+    preambles) mapped onto the QPSK constellation by placing each
+    Barker chip on both I and Q (i.e. +1 -> 1+1j, -1 -> -1-1j), then
+    normalizing to unit average power and repeating 3 times.
+
+    This avoids the poor autocorrelation of the previous 7-symbol
+    preamble derived from bit-pairing the Barker-13 sequence, which
+    caused spurious correlation peaks at high SNR.
+    """
+    barker_bits = np.array(
         [1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1],
         dtype=np.int8,
     )
+    barker_pm1 = np.where(barker_bits == 1, 1.0, -1.0)
 
-    if len(bits) % 2 != 0:
-        bits = np.concatenate([bits, np.zeros(1, dtype=np.int8)])
+    preamble = (barker_pm1 + 1j * barker_pm1) / np.sqrt(2.0)
+    preamble_long = np.tile(preamble, 3)
 
-    return bits.astype(np.int8)
+    return preamble_long.astype(np.complex64)
 
 
 def qpsk_modulate_bits(bits: np.ndarray) -> np.ndarray:
@@ -48,7 +65,8 @@ def qpsk_demodulate_symbols(symbols: np.ndarray) -> tuple[np.ndarray, np.ndarray
 
 def raised_cosine_filter(sps: int, span: int = 2, beta: float = 0.35) -> np.ndarray:
     num_taps = span * sps * 2 + 1
-    t = np.arange(-num_taps // 2, num_taps // 2 + 1, dtype=np.float64) / sps
+    half = num_taps // 2
+    t = np.arange(-half, half + 1, dtype=np.float64) / sps
 
     h = np.zeros_like(t)
 
@@ -96,9 +114,7 @@ def build_qpsk_tx_waveform(
     if rng is None:
         rng = np.random.default_rng()
 
-    preamble_bits = build_qpsk_barker_bits()
-    preamble_symbols = qpsk_modulate_bits(preamble_bits)
-    preamble_long = np.tile(preamble_symbols, 3)
+    preamble_long = build_qpsk_preamble_long()
 
     if data_bits % 2 != 0:
         raise ValueError("QPSK payload requires an even number of bits")
@@ -108,10 +124,6 @@ def build_qpsk_tx_waveform(
 
     tx_symbols = np.concatenate([preamble_long, payload_symbols]).astype(np.complex64)
     tx_waveform = pulse_shape(tx_symbols, sps=sps, span=2, beta=0.35)
-
-    rms = np.sqrt(np.mean(np.abs(tx_waveform) ** 2))
-    if rms > 0:
-        tx_waveform = tx_waveform / rms
 
     return tx_waveform.astype(np.complex64), tx_bits, tx_symbols
 
@@ -222,10 +234,8 @@ def compute_qpsk_detailed_metrics(
     signal_power = float(np.mean(np.abs(iq) ** 2))
     power_db = float(10.0 * np.log10(signal_power + eps))
 
-    preamble_bits = build_qpsk_barker_bits()
-    preamble_symbols = qpsk_modulate_bits(preamble_bits)
-    preamble_long = np.tile(preamble_symbols, 3)
-    rep_len = len(preamble_symbols)
+    preamble_long = build_qpsk_preamble_long()
+    rep_len = 13
 
     symbol_seq = _best_symbol_sequence(iq, sps=sps, preamble_long=preamble_long)
     if len(symbol_seq) < len(preamble_long) + 8:
@@ -248,6 +258,22 @@ def compute_qpsk_detailed_metrics(
         }
 
     peak_idx = int(np.argmax(corr))
+    peak_val = float(corr[peak_idx])
+
+    preamble_energy = float(np.vdot(preamble_long, preamble_long).real)
+    seq_power = float(np.mean(np.abs(symbol_seq) ** 2))
+    norm_denom = np.sqrt(preamble_energy * len(preamble_long) * seq_power)
+    norm_peak = peak_val / norm_denom if norm_denom > eps else 0.0
+
+    if norm_peak < MIN_PREAMBLE_CORR:
+        return {
+            "signal_power": signal_power,
+            "noise_power": float("nan"),
+            "power_db": power_db,
+            "noise_db": float("nan"),
+            "snr_db": float("nan"),
+        }
+
     pre_start = peak_idx
     pre_end = pre_start + len(preamble_long)
 

@@ -3,6 +3,11 @@ from __future__ import annotations
 import numpy as np
 from scipy import signal
 
+# Minimum normalized preamble correlation peak required to accept a
+# detection as a real preamble (rather than a spurious peak on noise).
+# Empirically, pure noise yields ~0.4; SNR>=0 dB yields >=0.87.
+MIN_PREAMBLE_CORR = 0.5
+
 
 def build_barker_code_13() -> np.ndarray:
     barker_bits = np.array(
@@ -21,7 +26,8 @@ def bpsk_modulate_bits(bits: np.ndarray) -> np.ndarray:
 
 def raised_cosine_filter(sps: int, span: int = 2, beta: float = 0.35) -> np.ndarray:
     num_taps = span * sps * 2 + 1
-    t = np.arange(-num_taps // 2, num_taps // 2 + 1, dtype=np.float64) / sps
+    half = num_taps // 2
+    t = np.arange(-half, half + 1, dtype=np.float64) / sps
 
     h = np.zeros_like(t)
 
@@ -77,10 +83,6 @@ def build_bpsk_tx_waveform(
 
     tx_symbols = np.concatenate([preamble_long, payload_symbols]).astype(np.complex64)
     tx_waveform = pulse_shape(tx_symbols, sps=sps, span=2, beta=0.35)
-
-    rms = np.sqrt(np.mean(np.abs(tx_waveform) ** 2))
-    if rms > 0:
-        tx_waveform = tx_waveform / rms
 
     return tx_waveform.astype(np.complex64), tx_bits, tx_symbols
 
@@ -216,6 +218,22 @@ def compute_bpsk_detailed_metrics(
         }
 
     peak_idx = int(np.argmax(corr))
+    peak_val = float(corr[peak_idx])
+
+    preamble_energy = float(np.vdot(preamble_long, preamble_long).real)
+    seq_power = float(np.mean(np.abs(symbol_seq) ** 2))
+    norm_denom = np.sqrt(preamble_energy * len(preamble_long) * seq_power)
+    norm_peak = peak_val / norm_denom if norm_denom > eps else 0.0
+
+    if norm_peak < MIN_PREAMBLE_CORR:
+        return {
+            "signal_power": signal_power,
+            "noise_power": float("nan"),
+            "power_db": power_db,
+            "noise_db": float("nan"),
+            "snr_db": float("nan"),
+        }
+
     pre_start = peak_idx
     pre_end = pre_start + len(preamble_long)
 

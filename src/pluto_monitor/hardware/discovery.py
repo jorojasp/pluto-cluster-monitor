@@ -92,9 +92,21 @@ def discover_configured_radios(config: dict) -> list[dict[str, str]]:
 
 
 def resolve_uri_from_serial(target_serial: str) -> str:
+    """Resolve a single serial against a fresh scan.
+
+    For resolving multiple serials at once (e.g. a full radio topology),
+    prefer `resolve_topology`, which performs a single scan and resolves
+    all serials against that consistent snapshot.
+    """
     target_serial = target_serial.lower()
     radios = scan_connected_radios()
+    return _resolve_serial_from_radios(target_serial, radios)
 
+
+def _resolve_serial_from_radios(
+    target_serial: str,
+    radios: list[dict[str, str]],
+) -> str:
     matches = [radio for radio in radios if radio["serial"] == target_serial]
 
     if not matches:
@@ -113,14 +125,17 @@ def resolve_uri_from_serial(target_serial: str) -> str:
 def resolve_topology(config: dict) -> ResolvedRadioTopology:
     topology = get_required_topology(config)
 
+    # Single scan: resolve all serials (receivers + transmitter) against
+    # one consistent snapshot of the IIO bus, instead of re-scanning once
+    # per radio. This avoids inconsistent results if Pluto devices
+    # re-enumerate between scans (e.g. right after a USB reset).
+    radios = scan_connected_radios()
+
+    all_serials = list(topology.receiver_serials) + [topology.transmitter_serial]
     serial_to_uri: dict[str, str] = {}
 
-    for serial in topology.receiver_serials:
-        serial_to_uri[serial] = resolve_uri_from_serial(serial)
-
-    serial_to_uri[topology.transmitter_serial] = resolve_uri_from_serial(
-        topology.transmitter_serial
-    )
+    for serial in all_serials:
+        serial_to_uri[serial] = _resolve_serial_from_radios(serial, radios)
 
     receiver_uris = [serial_to_uri[s] for s in topology.receiver_serials]
     transmitter_uri = serial_to_uri[topology.transmitter_serial]
