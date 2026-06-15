@@ -1,5 +1,5 @@
 node:
-  id: rxpi2
+  id: rpi_group_b
   role: receiver
   group: B
 
@@ -18,10 +18,10 @@ rf:
 
 radios:
   - label: B1
-    serial: "10447318ac0f000e1e002c005e141855c8"
+    serial: "CHANGE_ME_PLUTO_SERIAL_B1"
   - label: B2
-    serial: "10447318ac0f0003feff3200a5691709e5"
+    serial: "CHANGE_ME_PLUTO_SERIAL_B2"
 
 network:
-  central_host: "10.56.147.215"
+  central_host: "192.168.1.100"
   central_port: 5555

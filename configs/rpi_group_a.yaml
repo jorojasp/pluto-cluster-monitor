@@ -1,5 +1,5 @@
 node:
-  id: rxpi1
+  id: rpi_group_a
   role: receiver
   group: A
 
@@ -16,13 +16,14 @@ rf:
   data_bits: 4096
   tone_frequency_hz: 10000
 
+# Use either serial or uri. Serial is recommended because usb:X.Y.Z can change.
 radios:
   - label: A1
-    serial: "10447392da110010f2ff2100ef2af82477" 
-
-  #- label: A2
-  #  serial: "104473e6a60f00020a003000c60e16e28d"
+    serial: "CHANGE_ME_PLUTO_SERIAL_A1"
+    # uri: "usb:1.14.5"
+  - label: A2
+    serial: "CHANGE_ME_PLUTO_SERIAL_A2"
 
 network:
-  central_host: "192.168.1.115"
+  central_host: "192.168.1.100"
   central_port: 5555
