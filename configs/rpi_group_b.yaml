@@ -18,10 +18,10 @@ rf:
 
 radios:
   - label: B1
-    serial: "CHANGE_ME_PLUTO_SERIAL_B1"
+    serial: "10447318ac0f000e1e002c005e141855c8"
   - label: B2
-    serial: "CHANGE_ME_PLUTO_SERIAL_B2"
+    serial: "10447318ac0f0003feff3200a5691709e5"
 
 network:
-  central_host: "192.168.1.100"
+  central_host: "10.56.147.215"
   central_port: 5555

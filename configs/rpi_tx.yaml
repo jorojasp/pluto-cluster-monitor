@@ -15,5 +15,5 @@ rf:
   tone_frequency_hz: 10000
 
 radio:
-  serial: "CHANGE_ME_TX_PLUTO_SERIAL"
+  serial: "10447318ac0f001306002d006957176fa7"
   # uri: "usb:1.14.5"

@@ -3,7 +3,8 @@ node:
   role: central
 
 network:
-  listen_host: "0.0.0.0"
+  listen_host: "0.0.0.0" #134.147.21.240
+#10.56.147.215
   listen_port: 5555
 
 runtime:
