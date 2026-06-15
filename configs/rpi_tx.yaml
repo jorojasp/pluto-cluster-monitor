@@ -1,0 +1,19 @@
+node:
+  id: rpi_tx
+  role: transmitter
+
+app:
+  mode: SineWave
+
+rf:
+  center_frequency_hz: 2400000000
+  sample_rate_hz: 1000000
+  samples_per_frame: 4096
+  tx_gain_db: -12
+  sps: 2
+  data_bits: 4096
+  tone_frequency_hz: 10000
+
+radio:
+  serial: "CHANGE_ME_TX_PLUTO_SERIAL"
+  # uri: "usb:1.14.5"

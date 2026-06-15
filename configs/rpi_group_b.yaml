@@ -1,0 +1,27 @@
+node:
+  id: rpi_group_b
+  role: receiver
+  group: B
+
+app:
+  mode: SineWave
+  update_period_s: 0.5
+
+rf:
+  center_frequency_hz: 2400000000
+  sample_rate_hz: 1000000
+  samples_per_frame: 4096
+  rx_gain_db: 30
+  sps: 2
+  data_bits: 4096
+  tone_frequency_hz: 10000
+
+radios:
+  - label: B1
+    serial: "CHANGE_ME_PLUTO_SERIAL_B1"
+  - label: B2
+    serial: "CHANGE_ME_PLUTO_SERIAL_B2"
+
+network:
+  central_host: "192.168.1.100"
+  central_port: 5555
