@@ -16,14 +16,13 @@ rf:
   data_bits: 4096
   tone_frequency_hz: 10000
 
-# Use either serial or uri. Serial is recommended because usb:X.Y.Z can change.
 radios:
   - label: A1
-    serial: "CHANGE_ME_PLUTO_SERIAL_A1"
-    # uri: "usb:1.14.5"
+    serial: "104473e6a60f0002090007007d131693c2" 
+
   - label: A2
-    serial: "CHANGE_ME_PLUTO_SERIAL_A2"
+    serial: "104473e6a60f00020a003000c60e16e28d"
 
 network:
-  central_host: "192.168.1.100"
+  central_host: "10.56.147.215"
   central_port: 5555
