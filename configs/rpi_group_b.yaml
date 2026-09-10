@@ -1,5 +1,5 @@
 node:
-  id: rpi_group_b
+  id: rxpi2
   role: receiver
   group: B
 
