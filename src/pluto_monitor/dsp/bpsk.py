@@ -3,9 +3,6 @@ from __future__ import annotations
 import numpy as np
 from scipy import signal
 
-# Minimum normalized preamble correlation peak required to accept a
-# detection as a real preamble (rather than a spurious peak on noise).
-# Empirically, pure noise yields ~0.4; SNR>=0 dB yields >=0.87.
 MIN_PREAMBLE_CORR = 0.5
 
 
