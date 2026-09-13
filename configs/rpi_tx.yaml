@@ -1,5 +1,5 @@
 node:
-  id: txpi
+  id: rpi_tx
   role: transmitter
 
 app:
