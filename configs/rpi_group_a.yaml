@@ -1,0 +1,28 @@
+node:
+  id: rxpi1
+  role: receiver
+  group: A
+
+app:
+  mode: SineWave
+  update_period_s: 0.5
+
+rf:
+  center_frequency_hz: 2400000000
+  sample_rate_hz: 1000000
+  samples_per_frame: 4096
+  rx_gain_db: 30
+  sps: 2
+  data_bits: 4096
+  tone_frequency_hz: 10000
+
+radios:
+  - label: A1
+    serial: "10447392da110010f2ff2100ef2af82477" 
+
+  #- label: A2
+  #  serial: "104473e6a60f00020a003000c60e16e28d"
+
+network:
+  central_host: "192.168.1.115"
+  central_port: 5555

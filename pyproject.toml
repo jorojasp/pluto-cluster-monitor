@@ -26,6 +26,10 @@ dependencies = [
 pluto = [
   "pyadi-iio>=0.0.17"
 ]
+web = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29"
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

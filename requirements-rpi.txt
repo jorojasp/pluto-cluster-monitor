@@ -1,0 +1,3 @@
+# Raspberry Pi 2 profile.
+# Install numpy/scipy/yaml/libiio with apt first, then use this only for light pip packages.
+pyadi-iio>=0.0.17

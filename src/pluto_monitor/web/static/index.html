@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pluto Cluster Monitor</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Pluto Cluster Monitor <span class="muted" style="font-weight:400;font-size:12px;">— local (SDRs en este PC)</span></h1>
+    <div class="status-pill">
+      <span id="status-dot" class="dot idle"></span>
+      <span id="status-text">idle</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel" id="config-panel">
+      <h2>Configuración</h2>
+
+      <div class="field">
+        <label for="mode">Modo</label>
+        <select id="mode">
+          <option value="SineWave">SineWave</option>
+          <option value="BPSK">BPSK</option>
+          <option value="QPSK">QPSK</option>
+          <option value="16QAM">16QAM</option>
+        </select>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="center_frequency_hz">Frecuencia central (Hz)</label>
+          <input id="center_frequency_hz" type="number" step="1" />
+        </div>
+        <div class="field">
+          <label for="sample_rate_hz">Sample rate (Hz)</label>
+          <input id="sample_rate_hz" type="number" step="1" />
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="rx_gain_db">RX gain (dB)</label>
+          <input id="rx_gain_db" type="number" step="1" />
+        </div>
+        <div class="field">
+          <label for="tx_gain_db">TX gain (dB)</label>
+          <input id="tx_gain_db" type="number" step="1" />
+        </div>
+      </div>
+
+      <div class="field-row" id="digital-fields">
+        <div class="field">
+          <label for="sps">SPS</label>
+          <input id="sps" type="number" step="1" />
+        </div>
+        <div class="field">
+          <label for="data_bits">Data bits</label>
+          <input id="data_bits" type="number" step="1" />
+        </div>
+      </div>
+
+      <div class="field" id="tone-field">
+        <label for="tone_frequency_hz">Tono (Hz) — solo SineWave</label>
+        <input id="tone_frequency_hz" type="number" step="1" />
+      </div>
+
+      <div class="field">
+        <label for="update_period_s">Periodo de actualización (s)</label>
+        <input id="update_period_s" type="number" step="0.05" />
+      </div>
+
+      <div class="btn-row">
+        <button class="start" id="btn-start">Start</button>
+        <button class="stop" id="btn-stop" disabled>Stop</button>
+      </div>
+
+      <div class="error-banner" id="error-banner"></div>
+
+      <div style="margin-top:16px;">
+        <h2 style="margin-bottom:6px;">Radios conectados</h2>
+        <div id="connected-radios" class="muted" style="font-size:12px;">—</div>
+      </div>
+    </section>
+
+    <section class="content-col">
+      <div class="panel">
+        <h2>Grupos</h2>
+        <div class="overall-banner" id="overall-banner">Sin datos todavía.</div>
+        <div class="groups-grid" id="groups-grid">
+          <div class="empty-state">Inicia la adquisición para ver métricas por radio.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Potencia y ruido promedio por grupo</h2>
+        <div class="charts-grid">
+          <div>
+            <canvas id="chart-power" width="600" height="220"></canvas>
+            <div class="legend" id="legend-power"></div>
+          </div>
+          <div>
+            <canvas id="chart-noise" width="600" height="220"></canvas>
+            <div class="legend" id="legend-noise"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

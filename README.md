@@ -69,6 +69,7 @@ Suggested reading order:
 4. `docs/04_python_migration.md`
 5. `docs/05_signal_processing.md`
 6. `docs/06_experiments_and_results.md`
+7. `docs/07_web_frontend.md`
 
 ## Quick start
 
@@ -77,3 +78,30 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
+```
+
+## Web frontend (local PC radios)
+
+A browser dashboard is available for the local scenario -- multiple Pluto
+radios connected directly to this PC over USB (the same hardware path as
+`scripts/run_local.py`). It does not touch the Raspberry Pi distributed
+nodes (`pluto_monitor.nodes`, `pluto_monitor.network`).
+
+```bash
+pip install -r requirements-web.txt
+python scripts/run_web.py --config configs/default.yaml --port 8000
+```
+
+Then open `http://localhost:8000` in a browser. From there you can:
+
+- set center frequency, sample rate, RX/TX gain, mode (SineWave/BPSK/QPSK/16QAM),
+  and update period,
+- start/stop acquisition and transmission,
+- watch a live per-radio table (power/SNR) with strongest/weakest highlighted
+  per group,
+- watch live charts of mean power/noise per group.
+
+Radio wiring (which serials belong to which group, transmitter serial) is
+still configured in the YAML file, not from the UI, in this first version.
+See `docs/07_web_frontend.md` for details and what's intentionally left out
+(USB reset, snapshot export) for a later iteration.
