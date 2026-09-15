@@ -17,9 +17,7 @@ const els = {
   toneField: document.getElementById("tone-field"),
   digitalFields: document.getElementById("digital-fields"),
   chartPower: document.getElementById("chart-power"),
-  chartNoise: document.getElementById("chart-noise"),
   legendPower: document.getElementById("legend-power"),
-  legendNoise: document.getElementById("legend-noise"),
 };
 
 const configFieldIds = [
@@ -35,10 +33,17 @@ const configFieldIds = [
 
 // group_name -> array of {t, value}
 const powerHistory = {};
-const noiseHistory = {};
 let sampleIndex = 0;
 
+const GROUP_COLORS = {
+  A: "#4f8cff", // blue
+  B: "#f2b84b", // amber
+};
+
 function colorForGroup(name) {
+  if (GROUP_COLORS[name]) return GROUP_COLORS[name];
+
+  // Deterministic fallback for any future group beyond A/B.
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
     hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
@@ -117,7 +122,7 @@ async function startAcquisition() {
     });
     const data = await res.json();
     if (!res.ok) {
-      showError(data.detail || "No se pudo iniciar la adquisición.");
+      showError(data.detail || "Could not start acquisition.");
       els.btnStart.disabled = false;
       return;
     }
@@ -136,7 +141,7 @@ async function stopAcquisition() {
     const res = await fetch("/api/stop", { method: "POST" });
     const data = await res.json();
     if (!res.ok) {
-      showError(data.detail || "No se pudo detener la adquisición.");
+      showError(data.detail || "Could not stop acquisition.");
       els.btnStop.disabled = false;
       return;
     }
@@ -150,7 +155,6 @@ async function stopAcquisition() {
 function resetHistory() {
   sampleIndex = 0;
   for (const key of Object.keys(powerHistory)) delete powerHistory[key];
-  for (const key of Object.keys(noiseHistory)) delete noiseHistory[key];
 }
 
 function renderConnectedRadios(status) {
@@ -160,12 +164,12 @@ function renderConnectedRadios(status) {
 
 function renderGroups(metrics) {
   if (!metrics || Object.keys(metrics.groups).length === 0) {
-    els.groupsGrid.innerHTML = '<div class="empty-state">Sin datos todavía.</div>';
-    els.overallBanner.textContent = "Sin datos todavía.";
+    els.groupsGrid.innerHTML = '<div class="empty-state">No data yet.</div>';
+    els.overallBanner.textContent = "No data yet.";
     return;
   }
 
-  els.overallBanner.innerHTML = `Grupo más fuerte en este instante: <strong>${metrics.strongest_group}</strong>`;
+  els.overallBanner.innerHTML = `Strongest group right now: <strong>${metrics.strongest_group}</strong>`;
 
   const cards = [];
   for (const [groupName, group] of Object.entries(metrics.groups)) {
@@ -188,7 +192,7 @@ function renderGroups(metrics) {
 
     cards.push(`
       <div class="group-card">
-        <h3>Grupo ${groupName}</h3>
+        <h3>Group ${groupName}</h3>
         <div class="group-summary">mean power=${meanPower} dB · mean noise=${meanNoise} dB</div>
         <table>
           <thead><tr><th>Radio</th><th>Power (dB)</th><th>SNR (dB)</th></tr></thead>
@@ -213,7 +217,6 @@ function updateHistories(metrics) {
   if (!metrics) return;
   for (const [groupName, group] of Object.entries(metrics.groups)) {
     pushHistory(powerHistory, groupName, group.mean_power_db);
-    pushHistory(noiseHistory, groupName, group.mean_noise_db);
   }
   sampleIndex += 1;
 }
@@ -306,9 +309,7 @@ function connectWebSocket() {
     if (status.state === "running") {
       updateHistories(metrics);
       drawChart(els.chartPower, powerHistory);
-      drawChart(els.chartNoise, noiseHistory);
       renderLegend(els.legendPower, powerHistory);
-      renderLegend(els.legendNoise, noiseHistory);
     }
   };
 

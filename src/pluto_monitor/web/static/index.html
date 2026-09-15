@@ -8,7 +8,7 @@
 </head>
 <body>
   <header>
-    <h1>Pluto Cluster Monitor <span class="muted" style="font-weight:400;font-size:12px;">— local (SDRs en este PC)</span></h1>
+    <h1>Pluto Cluster Monitor <span class="muted" style="font-weight:400;font-size:12px;">— local (SDRs)</span></h1>
     <div class="status-pill">
       <span id="status-dot" class="dot idle"></span>
       <span id="status-text">idle</span>
@@ -17,10 +17,10 @@
 
   <main>
     <section class="panel" id="config-panel">
-      <h2>Configuración</h2>
+      <h2>Configuration</h2>
 
       <div class="field">
-        <label for="mode">Modo</label>
+        <label for="mode">Mode</label>
         <select id="mode">
           <option value="SineWave">SineWave</option>
           <option value="BPSK">BPSK</option>
@@ -31,7 +31,7 @@
 
       <div class="field-row">
         <div class="field">
-          <label for="center_frequency_hz">Frecuencia central (Hz)</label>
+          <label for="center_frequency_hz">Central frequency (Hz)</label>
           <input id="center_frequency_hz" type="number" step="1" />
         </div>
         <div class="field">
@@ -63,12 +63,12 @@
       </div>
 
       <div class="field" id="tone-field">
-        <label for="tone_frequency_hz">Tono (Hz) — solo SineWave</label>
+        <label for="tone_frequency_hz">Tone (Hz) — only SineWave</label>
         <input id="tone_frequency_hz" type="number" step="1" />
       </div>
 
       <div class="field">
-        <label for="update_period_s">Periodo de actualización (s)</label>
+        <label for="update_period_s">Update period (s)</label>
         <input id="update_period_s" type="number" step="0.05" />
       </div>
 
@@ -80,22 +80,22 @@
       <div class="error-banner" id="error-banner"></div>
 
       <div style="margin-top:16px;">
-        <h2 style="margin-bottom:6px;">Radios conectados</h2>
+        <h2 style="margin-bottom:6px;">Connected radios</h2>
         <div id="connected-radios" class="muted" style="font-size:12px;">—</div>
       </div>
     </section>
 
     <section class="content-col">
       <div class="panel">
-        <h2>Grupos</h2>
-        <div class="overall-banner" id="overall-banner">Sin datos todavía.</div>
+        <h2>Groups</h2>
+        <div class="overall-banner" id="overall-banner">No data yet.</div>
         <div class="groups-grid" id="groups-grid">
-          <div class="empty-state">Inicia la adquisición para ver métricas por radio.</div>
+          <div class="empty-state">Start acquisition to see radio metrics.</div>
         </div>
       </div>
 
       <div class="panel">
-        <h2>Potencia y ruido promedio por grupo</h2>
+        <h2>Power and noise</h2>
         <div class="charts-grid">
           <div>
             <canvas id="chart-power" width="600" height="220"></canvas>
