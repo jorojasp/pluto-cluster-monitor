@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -31,7 +31,7 @@
 
       <div class="field-row">
         <div class="field">
-          <label for="center_frequency_hz">Center frequency (Hz)</label>
+          <label for="center_frequency_hz">Central frequency (Hz)</label>
           <input id="center_frequency_hz" type="number" step="1" />
         </div>
         <div class="field">
@@ -53,7 +53,7 @@
 
       <div class="field-row" id="digital-fields">
         <div class="field">
-          <label for="sps">Samples per symbol (SPS)</label>
+          <label for="sps">SPS</label>
           <input id="sps" type="number" step="1" />
         </div>
         <div class="field">
@@ -63,7 +63,7 @@
       </div>
 
       <div class="field" id="tone-field">
-        <label for="tone_frequency_hz">Tone frequency (Hz) — SineWave only</label>
+        <label for="tone_frequency_hz">Tone (Hz) — only SineWave</label>
         <input id="tone_frequency_hz" type="number" step="1" />
       </div>
 
@@ -78,6 +78,11 @@
       </div>
 
       <div class="error-banner" id="error-banner"></div>
+
+      <div style="margin-top:16px;">
+        <h2 style="margin-bottom:6px;">Connected radios</h2>
+        <div id="connected-radios" class="muted" style="font-size:12px;">—</div>
+      </div>
     </section>
 
     <section class="content-col">
@@ -90,20 +95,15 @@
       </div>
 
       <div class="panel">
-        <h2>Received power history</h2>
-        <div class="chart-note">Noise is shown numerically in the group summaries above.</div>
-
+        <h2>Power and noise</h2>
         <div class="charts-grid">
-          <div class="chart-container">
-            <h3>Mean Power</h3>
-            <canvas id="chart-power" width="650" height="320"></canvas>
+          <div>
+            <canvas id="chart-power" width="600" height="220"></canvas>
             <div class="legend" id="legend-power"></div>
           </div>
-
-          <div class="chart-container">
-            <h3>Weakest Signal</h3>
-            <canvas id="chart-weakest" width="650" height="320"></canvas>
-            <div class="legend" id="legend-weakest"></div>
+          <div>
+            <canvas id="chart-noise" width="600" height="220"></canvas>
+            <div class="legend" id="legend-noise"></div>
           </div>
         </div>
       </div>
