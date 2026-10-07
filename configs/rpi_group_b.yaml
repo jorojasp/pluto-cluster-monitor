@@ -23,5 +23,7 @@ radios:
     serial: "10447318ac0f0003feff3200a5691709e5"
 
 network:
-  central_host: "10.56.147.215"
-  central_port: 5555
+  central_host: "192.168.1.21"
+  metrics_port: 5555
+  control_host: "0.0.0.0"
+  control_port: 5556
