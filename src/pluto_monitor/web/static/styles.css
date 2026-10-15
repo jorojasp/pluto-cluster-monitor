@@ -259,3 +259,12 @@ canvas {
   main { grid-template-columns: 1fr; }
   .charts-grid { grid-template-columns: 1fr; }
 }
+
+.radio-inventory-group { margin-top: 12px; }
+.radio-inventory-group > strong { display: block; margin-bottom: 6px; }
+.radio-inventory-item { display: grid; gap: 3px; padding: 6px 0; }
+.radio-inventory-item > span:first-child { color: var(--text); }
+.radio-inventory-item code { overflow-wrap: anywhere; font-size: 11px; }
+
+.tx-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.tx-toggle input { width: auto; }
