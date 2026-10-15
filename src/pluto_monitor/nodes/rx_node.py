@@ -9,7 +9,7 @@ import time
 from typing import Any
 
 from pluto_monitor.config.loader import load_config
-from pluto_monitor.hardware.discovery import resolve_uri_from_serial
+from pluto_monitor.hardware.discovery import resolve_uri_from_serial, scan_connected_radios
 from pluto_monitor.hardware.receiver import PlutoReceiver, ReceiverConfig
 from pluto_monitor.network.messages import dumps_message, loads_message
 from pluto_monitor.network.udp_client import UdpJsonClient
@@ -252,7 +252,18 @@ def _build_runtime_config(
             config["rf"][key] = value
 
     _validate_runtime_config(config)
-
+    # A capture must contain a complete cyclic digital frame regardless of
+    # where the USB buffer starts within the transmitted waveform.
+    mode = str(config["app"]["mode"])
+    if mode in {"BPSK", "QPSK", "16QAM"}:
+        bits_per_symbol = {"BPSK": 1, "QPSK": 2, "16QAM": 4}[mode]
+        bits = int(config["rf"]["data_bits"])
+        if bits % bits_per_symbol:
+            raise ValueError("data_bits must be divisible by bits per symbol")
+        samples = (39 + bits // bits_per_symbol) * int(config["rf"]["sps"])
+        config["rf"]["samples_per_frame"] = max(
+            int(config["rf"]["samples_per_frame"]), 2 * samples + 16,
+        )
     return config
 
 
@@ -329,6 +340,7 @@ def _result_to_message(
         "group": group,
 
         "sequence": sequence,
+        "rf": copy.deepcopy(config["rf"]),
         "timestamp": result.timestamp,
 
         "mode": str(
@@ -379,11 +391,37 @@ def _result_to_message(
 # Status messages
 # ---------------------------------------------------------------------
 
+def _radio_inventory(config: dict[str, Any]) -> list[dict[str, Any]]:
+    # Discover attached devices even while acquisition is idle.
+    try:
+        discovered = scan_connected_radios()
+    except Exception as exc:
+        print(f"Radio discovery failed: {exc}")
+        discovered = None
+    radios = []
+    for index, radio in enumerate(config.get("radios", []), start=1):
+        serial = str(radio.get("serial") or "").lower()
+        uri = radio.get("uri")
+        match = next(
+            (item for item in (discovered or [])
+             if (serial and item["serial"] == serial)
+             or (not serial and uri and item["uri"] == uri)), None,
+        )
+        radios.append({
+            "label": str(radio.get("label") or f"rx{index}"),
+            "serial": serial or (match["serial"] if match else None),
+            "uri": match["uri"] if match else uri,
+            "connected": match is not None if discovered is not None else None,
+        })
+    return radios
+
+
 def _build_status_message(
     *,
     config: dict[str, Any],
     state: str,
     connected_radios: int,
+    radios: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
 
     return {
@@ -402,6 +440,7 @@ def _build_status_message(
         "state": state,
 
         "connected_radios": connected_radios,
+        "radios": radios or [],
 
         "timestamp": time.time(),
     }
@@ -568,6 +607,8 @@ def run(config_path: str) -> None:
     )
 
     next_heartbeat = 0.0
+    next_inventory = 0.0
+    radio_inventory: list[dict[str, Any]] = []
 
     consecutive_errors = 0
 
@@ -868,6 +909,10 @@ def run(config_path: str) -> None:
 
             if now >= next_heartbeat:
 
+                if now >= next_inventory:
+                    radio_inventory = _radio_inventory(base_config)
+                    next_inventory = time.monotonic() + 10.0
+
                 state = (
                     "running"
                     if running
@@ -878,9 +923,10 @@ def run(config_path: str) -> None:
                     _build_status_message(
                         config=base_config,
                         state=state,
-                        connected_radios=(
-                            len(receivers)
+                        connected_radios=sum(
+                            radio["connected"] is True for radio in radio_inventory
                         ),
+                        radios=radio_inventory,
                     )
                 )
 

@@ -14,6 +14,7 @@ class StartRequest(BaseModel):
     for that.
     """
 
+    transmit_enabled: Optional[bool] = None
     mode: Optional[str] = Field(default=None, description="SineWave | BPSK | QPSK | 16QAM")
     center_frequency_hz: Optional[int] = None
     sample_rate_hz: Optional[int] = None

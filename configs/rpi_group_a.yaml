@@ -1,5 +1,5 @@
 node:
-  id: rpi_group_a
+  id: rxpi1
   role: receiver
   group: A
 
@@ -18,13 +18,13 @@ rf:
 
 radios:
   - label: A1
-    serial: "104473e6a60f0002090007007d131693c2" 
+    serial: "104473e6a60f0002090007007d131693c2"
 
   - label: A2
     serial: "104473e6a60f00020a003000c60e16e28d"
 
 network:
-  central_host: "192.168.1.21"
+  central_host: "txpi.local"
   metrics_port: 5555
   control_host: "0.0.0.0"
   control_port: 5556

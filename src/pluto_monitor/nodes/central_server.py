@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import argparse
 import copy
+import json
+import uuid
 import socket
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from pluto_monitor.config.loader import load_config
@@ -14,6 +17,9 @@ from pluto_monitor.network.messages import dumps_message, loads_message
 class DistributedRxCoordinator:
     def __init__(self, config: dict[str, Any]):
         self.config = config
+        self.session_id: str | None = None
+        self.session_log_path: str | None = None
+        self._session_log = None
         net = config["network"]
 
         self.metrics_host = str(net.get("metrics_host", "0.0.0.0"))
@@ -48,6 +54,37 @@ class DistributedRxCoordinator:
         self.running = False
         self.thread: threading.Thread | None = None
 
+    def _record(self, record: dict[str, Any]) -> None:
+        if self._session_log is not None:
+            try:
+                self._session_log.write(json.dumps(record, allow_nan=False) + "\n")
+                self._session_log.flush()
+            except (OSError, ValueError) as exc:
+                print(f"Session logging failed: {exc}")
+
+    def start_session(self, app: dict, rf: dict) -> None:
+        with self.lock:
+            self.end_session("replaced")
+            directory = Path(self.config.get("runtime", {}).get("log_dir", "data/logs"))
+            directory.mkdir(parents=True, exist_ok=True)
+            session_id = uuid.uuid4().hex
+            path = directory / f"session_{session_id}.jsonl"
+            stream = path.open("x", encoding="utf-8")
+            self.session_id = session_id
+            self.session_log_path = str(path.resolve())
+            self._session_log = stream
+            self.latest_metrics.clear()
+            self._record({"type": "session_start", "session_id": session_id,
+                          "timestamp": time.time(), "app": app, "rf": rf})
+
+    def end_session(self, reason: str = "stopped") -> None:
+        with self.lock:
+            if self._session_log is not None:
+                self._record({"type": "session_end", "session_id": self.session_id,
+                              "timestamp": time.time(), "reason": reason})
+                self._session_log.close()
+                self._session_log = None
+
     def start(self) -> None:
         if self.running:
             return
@@ -62,6 +99,7 @@ class DistributedRxCoordinator:
         )
 
     def close(self) -> None:
+        self.end_session("closed")
         self.running = False
 
         try:
@@ -97,11 +135,14 @@ class DistributedRxCoordinator:
 
         with self.condition:
             if message_type == "rx_metrics":
+                self._record({**message, "session_id": self.session_id,
+                              "received_at": time.time()})
                 group = str(message.get("group", ""))
                 if group:
                     self.latest_metrics[group] = copy.deepcopy(message)
 
                 self.node_status[node_id] = {
+                    **self.node_status.get(node_id, {}),
                     "state": "running",
                     "group": group,
                     "last_seen": time.time(),
@@ -113,6 +154,7 @@ class DistributedRxCoordinator:
                     "state": message.get("state", "unknown"),
                     "group": message.get("group"),
                     "connected_radios": message.get("connected_radios", 0),
+                    "radios": copy.deepcopy(message.get("radios", [])),
                     "last_seen": time.time(),
                     "address": addr[0],
                 }
@@ -268,6 +310,7 @@ class DistributedRxCoordinator:
                     "connected_radios": status.get(
                         "connected_radios", 0
                     ),
+                    "radios": status.get("radios", []),
                 }
 
             return result
@@ -316,6 +359,9 @@ class DistributedRxCoordinator:
                 summary = message.get("summary", {})
 
                 groups[group_name] = {
+                    "timestamp": message.get("timestamp"),
+                    "sequence": message.get("sequence"),
+                    "mode": message.get("mode"),
                     "radios": radios,
                     "mean_power_db": summary.get("mean_power_db"),
                     "mean_noise_db": summary.get("mean_noise_db"),
@@ -362,6 +408,7 @@ class DistributedRxCoordinator:
                 )[0]
 
             return {
+                "session_id": self.session_id,
                 "timestamp": max(timestamps) if timestamps else None,
                 "strongest_group": strongest_group,
                 "groups": groups,

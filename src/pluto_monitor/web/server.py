@@ -56,7 +56,7 @@ class DistributedService:
     def _make_config(self, overrides: dict[str, Any]) -> dict[str, Any]:
         config = copy.deepcopy(self.base_config)
 
-        app_fields = {"mode", "update_period_s"}
+        app_fields = {"mode", "update_period_s", "transmit_enabled"}
         rf_fields = {
             "center_frequency_hz",
             "sample_rate_hz",
@@ -92,6 +92,7 @@ class DistributedService:
             )
 
             try:
+                self.coordinator.start_session(config["app"], config["rf"])
                 responses = self.coordinator.start_receivers(
                     app=config["app"],
                     rf=config["rf"],
@@ -116,10 +117,10 @@ class DistributedService:
                     raise RuntimeError(f"RX start failed: {details}")
 
                 try:
-                    self.tx.start(
-                        app=config["app"],
-                        rf=config["rf"],
-                    )
+                    if config["app"].get("transmit_enabled", True):
+                        self.tx.start(app=config["app"], rf=config["rf"])
+                    else:
+                        self.tx.stop()
                 except Exception:
                     try:
                         self.coordinator.stop_receivers(timeout=3.0)
@@ -131,6 +132,7 @@ class DistributedService:
                 self.state = "running"
 
             except Exception as exc:
+                self.coordinator.end_session("start_failed")
                 self.state = "error"
                 self.error = str(exc)
                 raise
@@ -166,6 +168,7 @@ class DistributedService:
             except Exception as exc:
                 errors.append(f"RX: {exc}")
 
+            self.coordinator.end_session("stop_failed" if errors else "stopped")
             if errors:
                 self.state = "error"
                 self.error = "; ".join(errors)
@@ -190,6 +193,8 @@ class DistributedService:
                 "groups": groups,
                 "nodes": nodes,
                 "tx": self.tx.status(),
+                "session_id": self.coordinator.session_id,
+                "session_log": self.coordinator.session_log_path,
             }
 
     def metrics(self) -> dict[str, Any] | None:

@@ -1,21 +1,34 @@
 node:
   id: tx_server
   role: transmitter_server
-
 radio:
-  serial: "10447318ac0f001306002d006957176fa7" #"10447318ac0f0016edff2400667f1737dc" #"10447318ac0f0016f0ff1c0098871770ca" "10447318ac0f0016edff2400667f1737dc" 
-
+  serial: 10447318ac0f001306002d006957176fa7
 network:
-  metrics_host: "0.0.0.0"
+  metrics_host: 0.0.0.0
   metrics_port: 5555
-
   receiver_nodes:
-    - id: rxpi1
-      group: A
-      host: "IP_RPI_A"
-      control_port: 5556
-
-    - id: rxpi2
-      group: B
-      host: "192.168.0.105"
-      control_port: 5556
+  - id: rxpi1
+    group: A
+    host: rxpi1.local
+    control_port: 5556
+  - id: rxpi2
+    group: B
+    host: rxpi2.local
+    control_port: 5556
+app:
+  name: pluto-cluster-monitor
+  mode: SineWave
+  update_period_s: 0.5
+  transmit_enabled: false
+rf:
+  center_frequency_hz: 2400000000
+  sample_rate_hz: 1000000
+  samples_per_frame: 4096
+  rx_gain_db: 30
+  tx_gain_db: -40
+  sps: 2
+  data_bits: 4096
+  tone_frequency_hz: 10000
+runtime:
+  command_timeout_s: 30
+  log_dir: data/logs
