@@ -3,10 +3,12 @@ from __future__ import annotations
 import numpy as np
 from scipy import signal
 
+from pluto_monitor.dsp.quality import decision_directed_metrics
+
 # Minimum normalized preamble correlation peak required to accept a
 # detection as a real preamble (rather than a spurious peak on noise).
 # Empirically, pure noise yields ~0.4; SNR>=0 dB yields >=0.87.
-MIN_PREAMBLE_CORR = 0.5
+MIN_PREAMBLE_CORR = 0.65
 
 
 def build_barker_code_13() -> np.ndarray:
@@ -221,7 +223,7 @@ def compute_bpsk_detailed_metrics(
     peak_val = float(corr[peak_idx])
 
     preamble_energy = float(np.vdot(preamble_long, preamble_long).real)
-    seq_power = float(np.mean(np.abs(symbol_seq) ** 2))
+    seq_power = float(np.mean(np.abs(symbol_seq[peak_idx:peak_idx + len(preamble_long)]) ** 2))
     norm_denom = np.sqrt(preamble_energy * len(preamble_long) * seq_power)
     norm_peak = peak_val / norm_denom if norm_denom > eps else 0.0
 
@@ -296,25 +298,7 @@ def compute_bpsk_detailed_metrics(
     noise_err = data_corrected - decisions
     noise_power = float(np.mean(np.abs(noise_err) ** 2))
 
-    if ref_power <= 0 or noise_power <= 0:
-        return {
-            "signal_power": signal_power,
-            "noise_power": noise_power,
-            "power_db": power_db,
-            "noise_db": float("nan"),
-            "snr_db": float("nan"),
-        }
-
-    noise_db = float(10.0 * np.log10(noise_power + eps))
-    snr_db = float(10.0 * np.log10(ref_power / (noise_power + eps)))
-
-    return {
-        "signal_power": signal_power,
-        "noise_power": noise_power,
-        "power_db": power_db,
-        "noise_db": noise_db,
-        "snr_db": snr_db,
-    }
+    return decision_directed_metrics(signal_power, ref_power, noise_power, eps)
 
 
 def compute_bpsk_metrics(

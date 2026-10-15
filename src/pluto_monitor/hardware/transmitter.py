@@ -40,9 +40,18 @@ class PlutoTransmitter:
         if iq.size == 0:
             raise ValueError("Cannot transmit an empty waveform")
 
-        peak = np.max(np.abs(iq))
-        if peak > 0:
-            iq = iq / peak
+        if not np.all(np.isfinite(iq)):
+            raise ValueError("TX samples must be finite")
+        rms = float(np.sqrt(np.mean(np.abs(iq.astype(np.complex128)) ** 2)))
+        if rms <= 0:
+            raise ValueError("Cannot transmit a zero-power waveform")
+        # pyadi-iio expects DAC codes, not normalized floating-point samples.
+        # Equal RMS keeps the average digital drive comparable across modes.
+        iq = iq * ((2 ** 13) / rms)
+        peak = float(np.max(np.abs(iq)))
+        if peak > 2 ** 14:
+            iq *= (2 ** 14) / peak
+        iq = (np.rint(iq.real) + 1j * np.rint(iq.imag)).astype(np.complex64)
 
         self._device.tx_destroy_buffer()
         self._device.tx(iq)

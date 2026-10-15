@@ -84,7 +84,10 @@ def acquire_once(
             iq = receiver.read_samples()
 
             if mode == "SineWave":
-                metrics = compute_sinewave_detailed_metrics(iq)
+                metrics = compute_sinewave_detailed_metrics(
+                    iq, sample_rate_hz=rf_config["sample_rate_hz"],
+                    tone_frequency_hz=rf_config.get("tone_frequency_hz"),
+                )
                 power_db = metrics["power_db"]
                 snr_db = metrics["snr_db"]
 
