@@ -1,5 +1,9 @@
 # Python Migration
 
+> Historical design/migration narrative. The current distributed implementation,
+> deployed scope and limitations are described in the [README](../README.md),
+> [web architecture](07_web_frontend.md) and [results](06_experiments_and_results.md).
+
 ## Purpose of the Migration
 
 The migration from MATLAB to Python is intended to preserve the validated functionality of the original prototype while improving the software architecture for long-term development.

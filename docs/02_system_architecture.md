@@ -1,5 +1,9 @@
 # System Architecture
 
+> Historical design/migration narrative. The current distributed implementation,
+> deployed scope and limitations are described in the [README](../README.md),
+> [web architecture](07_web_frontend.md) and [results](06_experiments_and_results.md).
+
 ## General Overview
 
 The system is designed as a scalable multi-SDR platform for real-time signal monitoring and analysis. It uses ADALM-Pluto radios to form a small wireless measurement network composed of:

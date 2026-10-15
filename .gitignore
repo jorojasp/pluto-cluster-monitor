@@ -43,3 +43,4 @@ data/logs/*
 # Config overrides
 configs/local.yaml
 .env
+configs/*.local.yaml

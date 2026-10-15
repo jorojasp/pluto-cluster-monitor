@@ -10,9 +10,12 @@ fi
 TARGET="$1"
 REMOTE_DIR="${2:-/home/pi/pluto-cluster-monitor}"
 
-rsync -av --delete \
+rsync -av \
   --exclude '.git/' \
   --exclude '.venv/' \
+  --exclude '.env' \
+  --exclude 'configs/local.yaml' \
+  --exclude 'configs/*.local.yaml' \
   --exclude '__pycache__/' \
   --exclude '*.pyc' \
   --exclude 'data/exports/' \
@@ -21,4 +24,5 @@ rsync -av --delete \
 
 echo "Uploaded to $TARGET:$REMOTE_DIR"
 echo "Then SSH and run:"
-echo "  cd $REMOTE_DIR && ./scripts/setup_rpi.sh"
+echo "  cd $REMOTE_DIR && bash scripts/setup_rpi.sh receiver"
+echo "Use the server profile on the TX/web host."

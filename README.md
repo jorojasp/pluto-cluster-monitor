@@ -1,107 +1,123 @@
 # Pluto Cluster Monitor
 
-Python migration of a multi-ADALM Pluto SDR monitoring system originally implemented in MATLAB.
+A Python platform for monitoring groups of ADALM-Pluto SDR receivers, migrated
+from a MATLAB prototype. It compares received power and estimated SNR using
+one transmitter and multiple logical receiver groups.
 
-## Overview
+## Current architecture
 
-This project develops a scalable multi-SDR platform for real-time analysis of wireless communication signals using ADALM-Pluto radios.
+The distributed web setup uses three Raspberry Pi 2 Model B boards:
 
-The original system was implemented in MATLAB and demonstrated continuous monitoring of received power and Signal-to-Noise Ratio (SNR), automatic identification of the strongest and weakest receivers, support for multiple transmission modes, and flexible grouping of receivers into logical clusters for comparative analysis.
+| Host | Role | Config | Attached radios |
+| --- | --- | --- | --- |
+| `txpi` | Web server, UDP coordinator and transmitter | `configs/rpi_server.yaml` | One TX |
+| `rxpi1` | Group A acquisition and DSP | `configs/rpi_group_a.yaml` | A1 and A2 |
+| `rxpi2` | Group B acquisition and DSP | `configs/rpi_group_b.yaml` | B1 and B2 |
 
-The current stage of the project focuses on porting the backend from MATLAB to Python. The goal is to preserve the validated logic of the original prototype while improving modularity, maintainability, and long-term deployability.
+Receiver serial numbers stay in the receiver's YAML. The server distributes RF
+settings and Start/Stop commands over UDP; each receiver returns per-radio
+metrics and a periodically refreshed hardware inventory. Add radios to the
+appropriate receiver config to expand a group; throughput and power delivery
+must then be checked experimentally.
 
-## Current goal
+SineWave, BPSK, QPSK and 16QAM have TX/RX code paths and synthetic tests.
+**Only SineWave has completed the current physical gain/proximity checks.**
+Digital modulation validation on this distributed hardware remains pending.
 
-Build a modular backend capable of:
+The original single-PC console/Matplotlib path remains available through
+`scripts/run_local.py` with `configs/default.yaml`. The web server currently
+uses the distributed provider; `web/service.py` is the earlier local service.
 
-- controlling multiple Pluto SDR receivers
-- controlling one Pluto SDR transmitter
-- computing received power and SNR metrics
-- identifying strongest and weakest receivers by group
-- comparing receiver groups
-- storing short measurement histories
-- exporting plots and measurements for later analysis
+## Start the distributed system
 
-## Project status
+See [Raspberry Pi setup](docs/09_raspberry_pi_setup.md) for OS dependencies and
+installation. From the repository root on each node, activate its environment:
 
-This repository contains the first structured Python backend derived from the original MATLAB prototype.
+```bash
+source .venv/bin/activate
+```
 
-The current development focus is on:
+On `rxpi1`:
 
-- hardware discovery and stable radio identification
-- continuous acquisition for SineWave mode
-- received power and SNR estimation
-- strongest/weakest receiver monitoring
-- group-based comparison
-- history tracking and plot export
+```bash
+python -m pluto_monitor.nodes.rx_node --config configs/rpi_group_a.yaml
+```
 
-At this stage, the Python version should be understood as a backend reconstruction of the validated MATLAB system, not yet as a full replacement of the original interactive interface.
+On `rxpi2`:
 
-## Planned features
+```bash
+python -m pluto_monitor.nodes.rx_node --config configs/rpi_group_b.yaml
+```
 
-- multi-receiver monitoring
-- cluster-based comparison
-- SineWave mode
-- BPSK / QPSK / 16QAM processing
-- export of plots and snapshots
-- improved hardware discovery and mapping
-- future distributed TX/RX architecture
-- possible embedded Linux deployment
+On `txpi`:
 
-## Repository structure
+```bash
+python scripts/run_web.py --config configs/rpi_server.yaml --port 8000
+```
 
-- `configs/`: YAML configuration files
-- `docs/`: technical and thesis-oriented documentation
-- `scripts/`: runnable entrypoints
-- `src/pluto_monitor/`: application source code
-- `tests/`: unit tests
-- `data/`: runtime data, logs, and exports
+Open `http://txpi.local:8000` from another machine on the same LAN. The sample
+server configuration starts with TX disabled and TX gain -40 dB. Check
+**Enable transmitter** before Start when transmission is wanted. Uncheck it
+for a background measurement. Settings apply to the next Start.
 
-## Documentation
+The dashboard displays English labels, serials by group, power/SNR tables,
+and timestamped group charts with distinct colors. Every acquisition session
+is recorded as JSONL under `data/logs/`; these files contain metrics, not raw IQ.
+`GET /api/status` includes the current/last session ID and log path.
 
-Detailed project documentation is available in [`docs/`](docs/).
+## PC installation and tests
 
-Suggested reading order:
-
-1. `docs/01_problem_statement.md`
-2. `docs/02_system_architecture.md`
-3. `docs/03_matlab_prototype.md`
-4. `docs/04_python_migration.md`
-5. `docs/05_signal_processing.md`
-6. `docs/06_experiments_and_results.md`
-7. `docs/07_web_frontend.md`
-
-## Quick start
+Python 3.10+ is required. For a full development environment:
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
+# Linux/macOS: source .venv/bin/activate
+# Windows PowerShell: .\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[pluto,local,web,dev]"
+python -m pytest -q
+node tests/test_frontend_history.mjs
 ```
 
-## Web frontend (local PC radios)
-
-A browser dashboard is available for the local scenario -- multiple Pluto
-radios connected directly to this PC over USB (the same hardware path as
-`scripts/run_local.py`). It does not touch the Raspberry Pi distributed
-nodes (`pluto_monitor.nodes`, `pluto_monitor.network`).
+For local USB radios on the PC:
 
 ```bash
-pip install -r requirements-web.txt
-python scripts/run_web.py --config configs/default.yaml --port 8000
+python scripts/run_local.py
 ```
 
-Then open `http://localhost:8000` in a browser. From there you can:
+## Measurement limits
 
-- set center frequency, sample rate, RX/TX gain, mode (SineWave/BPSK/QPSK/16QAM),
-  and update period,
-- start/stop acquisition and transmission,
-- watch a live per-radio table (power/SNR) with strongest/weakest highlighted
-  per group,
-- watch live charts of mean power/noise per group.
+- Power is relative to IQ sample units, **not calibrated dBm**, and includes DC.
+- SineWave estimates a tone and its residual. Receiver spurs can also yield a
+  tone estimate with TX off; SNR alone does not identify the intended source.
+- Digital SNR is decision-directed; estimated error includes distortion and
+  synchronization error, not only thermal noise.
+- Startup spikes and variable DC offsets, particularly in A2, remain unresolved.
+- The lab receiver Pis reported undervoltage during these tests. Long-term
+  stability and additional-radio capacity have not been established.
+- A LAN/name-resolution failure can terminate an RX process. Recovery and
+  automatic startup are not implemented; restart the node and reset the server
+  with Stop before repeating an interrupted measurement.
 
-Radio wiring (which serials belong to which group, transmitter serial) is
-still configured in the YAML file, not from the UI, in this first version.
-See `docs/07_web_frontend.md` for details and what's intentionally left out
-(USB reset, snapshot export) for a later iteration.
+## Repository map
+
+- `src/pluto_monitor/hardware/`: serial discovery and radio access.
+- `src/pluto_monitor/dsp/`: waveform generation and metric estimators.
+- `src/pluto_monitor/services/`: acquisition and group comparison.
+- `src/pluto_monitor/nodes/`, `network/`: distributed roles and UDP messages.
+- `src/pluto_monitor/web/`: API, lifecycle and static browser dashboard.
+- `configs/`: local and distributed YAML configurations.
+- `scripts/`: setup, transfer, discovery and application entrypoints.
+- `tests/`: hardware-free Python regressions and frontend history checks.
+- `data/`: ignored runtime logs, captures and exports.
+
+## Documentation
+
+1. [Problem statement](docs/01_problem_statement.md)
+2. [Architecture and migration background](docs/02_system_architecture.md)
+3. [MATLAB prototype](docs/03_matlab_prototype.md)
+4. [Python migration background](docs/04_python_migration.md)
+5. [Signal processing and units](docs/05_signal_processing.md)
+6. [Experiments and results](docs/06_experiments_and_results.md)
+7. [Distributed web frontend and API](docs/07_web_frontend.md)
+8. [Measurement corrections and validation protocol](docs/08_measurement_validation.md)
+9. [Raspberry Pi setup and recovery](docs/09_raspberry_pi_setup.md)

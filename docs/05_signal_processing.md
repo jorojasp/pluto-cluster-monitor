@@ -1,109 +1,63 @@
-# Signal Processing and Metrics
+# Signal processing and metrics
 
-## General Goal
+## Shared power reference
 
-The signal-processing layer of the project is responsible for extracting useful information from the received IQ data streams. Depending on the selected transmission mode, this includes either direct signal-quality metrics or more advanced demodulation-related processing.
+Total received IQ power is `mean(abs(iq)**2)`, converted with
+`10*log10(power + epsilon)`. It includes the wanted signal, interference, noise
+and DC offset. Values are relative to the input ADC sample units, not dBm.
+Hardware RX gain must remain fixed during a distance or group comparison.
 
-At the current stage of the Python migration, the priority is to rebuild the SineWave measurement path before porting the more complex digital receiver chains.
+For group means, power is averaged in linear units before conversion to dB.
+The strongest and weakest receivers are selected by total received power.
+The strongest group is the group containing the single highest-power receiver,
+not the group with the highest mean power. A transient can therefore affect
+this selection; use recorded medians for the controlled comparisons.
 
-## Core Metrics
+## Transmission
 
-The project currently focuses on two main metrics:
+The transmitter converts waveforms to DAC code amplitudes before calling
+pyadi-iio. Target RMS is 8192 with a complex peak limit of 16384. This fixes the
+previous unit-amplitude data being truncated to zero or one integer code.
+Different modulation crest factors can cause the headroom limiter to reduce
+drive. Hardware TX gain remains a separate setting.
 
-- **Received power**
-- **Signal-to-Noise Ratio (SNR)**
+## SineWave
 
-These metrics are used to evaluate signal quality at each receiver and to compare receivers across logical groups.
+The estimator searches near the requested tone, allowing oscillator offset,
+and gates on a spectral peak. It then fits a complex sinusoid and DC term.
+SNR is fitted tone power divided by residual power; estimated noise is the
+residual in the original IQ power reference. It no longer classifies the
+variance of the sinusoid itself as noise.
 
-## Power Measurement
+The spectral gate is not proof of source identity: real receiver spurs were
+observed with TX off and produced negative SNR estimates. Use TX-off/on and
+controlled gain changes to establish that a component follows the intended TX.
+The fitted frequency is available in the detailed DSP return value but is not
+yet exported in the per-radio network metrics.
 
-Received power is computed from the IQ samples captured at each receiver. The general idea is to estimate the average signal energy over the received frame and convert it into a logarithmic dB representation.
+## BPSK, QPSK and 16QAM
 
-This measurement is used to:
+Digital paths generate a repeated 39-symbol Barker-derived preamble followed
+by a random payload and pulse shaping. Reception uses matched filtering,
+sample-phase selection, preamble correlation, phase-drift correction, a scalar
+channel estimate and symbol decisions. The distributed receiver buffer spans
+at least two cyclic frames to allow arbitrary capture alignment.
 
-- compare receivers,
-- identify strongest and weakest receivers,
-- support group comparison,
-- and produce historical plots.
+SNR uses decision-directed error relative to decided symbols. Equivalent
+input-referred noise/error power is `P_total / (1 + SNR_linear)`. This shares
+the raw IQ power reference but includes distortion and synchronization error;
+it is not a calibrated thermal-noise measurement. Failed preamble detection
+leaves SNR/error unavailable, while total power remains measurable.
 
-## SNR Estimation
+These paths pass synthetic signal tests. Physical modulation validation,
+frequency-offset robustness, BER and precision calibration remain pending.
 
-SNR is estimated differently depending on the signal mode.
+## Histories
 
-### SineWave Mode
+The browser deduplicates frames using each group's sequence and timestamp.
+Its 120-point history is separate from the full metric session log. Missing
+estimates appear as gaps. The console path also supports Matplotlib history
+and weakest/strongest PNG exports.
 
-For the current Python backend, SineWave mode is the first measurement path being rebuilt. In this mode, the backend reads IQ samples and estimates:
-
-- signal power,
-- residual or noise-related power,
-- and a practical SNR estimate for monitoring purposes.
-
-This estimate is currently treated as an operational metric intended to preserve the monitoring behavior of the MATLAB prototype, rather than as a final precision laboratory-grade estimator.
-
-### Digital Modulation Modes
-
-In the MATLAB version, the digital receiver chains included additional steps such as:
-
-- Barker-code-based frame synchronization,
-- coarse frequency compensation,
-- carrier synchronization,
-- symbol timing recovery,
-- preamble-based alignment,
-- and SNR estimation after symbol correction and decision.
-
-These chains are more complex and will be ported after the SineWave path is stable.
-
-## Strongest and Weakest Receiver Selection
-
-For each logical receiver group, the backend identifies:
-
-- the receiver with the highest measured power,
-- the receiver with the lowest measured power.
-
-This is one of the most visible outputs of the system and is central to the cluster-comparison concept.
-
-## Group Comparison
-
-The project compares receiver groups in order to determine which subset of receivers is performing better under current conditions.
-
-This comparison must remain consistent across development stages. One important implementation note is that the exact comparison rule should be explicitly documented and kept stable, since different definitions are possible, such as:
-
-- comparison by group mean,
-- comparison by strongest receiver in each group,
-- or comparison by another aggregate metric.
-
-This should be treated as a design decision and documented clearly.
-
-## Time History and Plotting
-
-The system stores short histories of measurement results so that metric evolution can be visualized over time.
-
-For the current Python backend, the initial plotting focus is:
-
-- strongest receiver power per group,
-- weakest receiver power per group.
-
-This reproduces one of the key behaviors of the original MATLAB interface while keeping the first backend implementation manageable.
-
-## Why SineWave Comes First
-
-The SineWave path is the best first target because it allows the project to validate:
-
-- radio connectivity,
-- continuous acquisition,
-- metric computation,
-- strongest/weakest selection,
-- group comparison,
-- and plotting,
-
-without introducing the additional complexity of symbol synchronization and demodulation.
-
-## Future Signal-Processing Work
-
-After the SineWave path is stable, the next signal-processing steps are expected to be:
-
-- BPSK chain migration,
-- QPSK chain migration,
-- 16QAM chain migration,
-- improved SNR estimation,
-- and possibly positioning- or protocol-related higher-level processing.
+See [validation protocol](08_measurement_validation.md) and
+[experimental results](06_experiments_and_results.md).

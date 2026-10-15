@@ -1,103 +1,66 @@
-# Web Frontend (Local PC Radios)
+# Distributed web frontend
 
-## Scope
+## Runtime flow
 
-This first frontend iteration targets the **local scenario only**: multiple
-ADALM-Pluto radios connected directly to the PC running the process over
-USB. It is the web equivalent of `scripts/run_local.py` / `app.py`.
+`web/server.py` uses `DistributedService`, `DistributedRxCoordinator` and
+`LocalTxController`. The server runs on `txpi`, which also owns the TX Pluto.
+The two receiver processes run on `rxpi1` and `rxpi2`; USB IQ acquisition and
+DSP happen on those boards. Only JSON metrics cross the LAN.
 
-It intentionally does **not** touch:
+The earlier `web/service.py` contains the single-PC `AcquisitionService` and
+its tests. It is not the provider selected by the current web server.
 
-- `pluto_monitor.nodes` (`rx_node.py`, `tx_node.py`, `central_server.py`),
-- `pluto_monitor.network` (`udp_server.py`, `udp_client.py`, `messages.py`).
+The static HTML/CSS/JavaScript needs no CDN or frontend build. Group A is blue
+and group B orange. Serial inventories are reported even while acquisition is
+idle; missing radios and stale/offline nodes are labeled separately.
 
-Those implement the Raspberry Pi distributed architecture and are left
-completely untouched.
+## Start
 
-## Why a web UI instead of a desktop GUI
-
-The distributed architecture already speaks a network protocol: RPi nodes
-send `rx_metrics` JSON messages over UDP to `central_server.py`, which
-today only prints them. The metrics shape produced there (`radios`,
-`group`, `summary`) is effectively the same shape produced locally by
-`services.acquisition.acquire_once`.
-
-Building the frontend as a web app (FastAPI + WebSocket) instead of a
-native desktop app (PyQt) means that when the distributed architecture is
-wired up later, only the *data source* has to change:
-
-- today: `pluto_monitor.web.service.AcquisitionService` drives local
-  hardware directly and produces snapshots,
-- later: a second provider can read the aggregated state kept by
-  `central_server.py` and expose the same JSON shape.
-
-The static frontend (`web/static/`) and the WebSocket contract
-(`{"status": ..., "metrics": ...}`) do not need to change for that
-migration.
-
-## Architecture
-
-```
-pluto_monitor/web/
-  service.py   - AcquisitionService: owns hardware lifecycle + background
-                 acquisition thread (reuses app.build_receivers /
-                 build_transmitter / build_tx_waveform / acquire_once).
-  schemas.py   - Pydantic request/response models for the REST API.
-  server.py    - FastAPI app: REST endpoints + /ws/metrics WebSocket +
-                 static file serving.
-  static/      - Plain HTML/CSS/JS dashboard. No CDN, no build step
-                 (charts are hand-drawn on <canvas>), so it keeps working
-                 without internet access in a lab.
+```bash
+python scripts/run_web.py --config configs/rpi_server.yaml --port 8000
 ```
 
-Hardware I/O (`pyadi-iio`) is blocking, so it always runs on a single
-background thread owned by `AcquisitionService`; the FastAPI/uvicorn event
-loop only ever reads the latest snapshot under a lock. This mirrors the
-`while True: ...; time.sleep(...)` loop in `app.run_continuous`, just
-without blocking the whole process.
+This requires the RX processes to be running as described in the
+[Raspberry Pi guide](09_raspberry_pi_setup.md). The CLI default is the server
+configuration. To select another file set `--config`; direct uvicorn launches
+can instead set `PLUTO_MONITOR_CONFIG`.
 
 ## API
 
-- `GET /api/config` - returns the raw YAML config (defaults for the form).
-- `GET /api/status` - current lifecycle state, mode, connected radios, groups.
-- `GET /api/metrics` - latest snapshot (or `null` if nothing acquired yet).
-- `POST /api/start` - body is a `StartRequest` with optional overrides
-  (`mode`, `center_frequency_hz`, `sample_rate_hz`, `rx_gain_db`,
-  `tx_gain_db`, `tone_frequency_hz`, `sps`, `data_bits`, `update_period_s`).
-  Returns `409` if already running/starting.
-- `POST /api/stop` - stops acquisition/transmission and closes hardware.
-  Returns `409` if not running.
-- `WS /ws/metrics` - pushes `{"status": ..., "metrics": ...}` every
-  `WS_PUSH_INTERVAL_S` (0.2s by default), independent of the hardware
-  acquisition period.
+| Route | Behavior |
+| --- | --- |
+| `GET /` | Dashboard |
+| `GET /api/config` | Base server app/RF settings for the form |
+| `GET /api/status` | Global lifecycle, per-node inventories/age, TX state, last session ID/path |
+| `GET /api/metrics` | Latest per-group metrics, individual timestamps and sequence numbers |
+| `POST /api/start` | Start RX nodes and optionally TX; body accepts RF/mode/timing overrides and `transmit_enabled` |
+| `POST /api/stop` | Stop TX and RX; return to idle when all nodes acknowledge |
+| `WS /ws/metrics` | Latest status and metrics every 0.2 seconds |
 
-## What's deliberately left out of this iteration
+Settings are applied on Start. The frontend disables configuration controls
+while active. With Enable transmitter unchecked, Start acquires only the
+background; the TX remains off. Radio serials/group wiring stay in YAML.
 
-- **Radio-to-group wiring from the UI.** Still edited in the YAML config
-  (`clusters.groups`, `clusters.transmitter_serial`), same as
-  `scripts/run_local.py`.
-- **USB reset.** The MATLAB prototype had this; it was never ported to the
-  Python backend (`hardware/` has no reset logic today). Adding it means
-  deciding on a mechanism (`pyusb`, `usbreset`, or a udev-based approach)
-  and is planned as a follow-up once the core dashboard is validated with
-  real hardware.
-- **Snapshot/plot export.** `utils/plotting.py` already exports matplotlib
-  plots from `MetricHistory` for the console flow; wiring an equivalent
-  "export" button/endpoint for the web UI is a follow-up, not core to
-  validating the live monitoring flow first.
+## Charts and persistence
 
-## Testing without real hardware
+Charts use acquisition timestamps, not WebSocket message count. Repeated
+snapshots do not create extra points, and groups update independently. The
+vertical range spans at least 20 dB and only expands during a session; a large
+startup transient can therefore visually flatten subsequent small changes.
+Axes show elapsed seconds and relative IQ dB. Estimated noise/error is labeled
+as such, and missing estimates create gaps.
 
-`tests/test_web_service.py` stubs `iio`/`adi` and monkeypatches
-`build_receivers` / `build_transmitter` / `build_tx_waveform` /
-`acquire_once`, so the service's state machine (start/stop/error
-handling, snapshot shape, NaN-safety for JSON) is covered without needing
-a Pluto connected. Run it like any other test:
+The coordinator records every received metrics message in a unique JSONL
+session, with effective RX settings, sequence, source timestamp and server
+receive time. Start/stop metadata distinguish TX-off and TX-on sessions.
+Raw IQ is not persisted. Logs stay under `runtime.log_dir`, ignored by Git.
 
-```bash
-pytest tests/test_web_service.py
-```
+## Current limitations
 
-End-to-end testing (actually opening the dashboard and watching live
-data) still requires real Pluto hardware connected to the machine
-running `scripts/run_web.py`.
+Node disconnection can terminate an RX process because UDP/name-resolution
+errors are not recovered automatically. Server state may retain the last
+reported node state; inspect `age_s` (the UI marks inventory stale after 10 s).
+The latest metric snapshot can remain after Stop; it is not live acquisition.
+After recovery, use Stop to clear the lifecycle error and repeat the session.
+Automatic process restart, USB reset, snapshot export and raw-IQ capture are
+not implemented. See [experimental limits](06_experiments_and_results.md).

@@ -14,28 +14,27 @@ authors = [
 dependencies = [
   "numpy>=1.26",
   "scipy>=1.12",
-  "matplotlib>=3.8",
-  "PyYAML>=6.0",
-  "pydantic>=2.6",
-  "typer>=0.12",
-  "rich>=13.7",
-  "pytest>=8.0"
+  "PyYAML>=6.0"
 ]
 
 [project.optional-dependencies]
-pluto = [
-  "pyadi-iio>=0.0.17"
-]
+pluto = ["pyadi-iio>=0.0.17"]
+local = ["matplotlib>=3.8"]
 web = [
+  "pydantic>=2.6",
   "fastapi>=0.110",
   "uvicorn[standard]>=0.29"
 ]
+dev = ["pytest>=8.0"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"pluto_monitor.web" = ["static/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
