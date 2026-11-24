@@ -189,7 +189,7 @@ def _canned_result() -> AcquisitionResult:
 
 
 @pytest.fixture()
-def patched_service(monkeypatch: pytest.MonkeyPatch) -> AcquisitionService:
+def patched_service(monkeypatch: pytest.MonkeyPatch, tmp_path) -> AcquisitionService:
     svc = AcquisitionService(config_path="unused.yaml")
 
     fake_config = {
@@ -204,7 +204,7 @@ def patched_service(monkeypatch: pytest.MonkeyPatch) -> AcquisitionService:
             "data_bits": 4096,
             "tone_frequency_hz": 10_000,
         },
-        "runtime": {"max_history_points": 10},
+        "runtime": {"max_history_points": 10, "log_dir": str(tmp_path)},
     }
 
     monkeypatch.setattr(svc, "load_base_config", lambda: dict(fake_config))
@@ -332,6 +332,26 @@ def test_provider_follows_the_configuration(tmp_path) -> None:
     other.write_text("app: {}\n", encoding="utf-8")
     with pytest.raises(ValueError):
         create_service(str(other))
+
+
+def test_local_session_is_logged(patched_service: AcquisitionService) -> None:
+    import json
+    import time
+    from pathlib import Path
+
+    patched_service.start({"transmit_enabled": False})
+    for _ in range(100):
+        if patched_service.get_snapshot() is not None:
+            break
+        time.sleep(0.01)
+    path = Path(patched_service.status()["session_log"])
+    patched_service.stop()
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert [rows[0]["type"], rows[1]["type"], rows[-1]["type"]] == [
+        "session_start", "local_metrics", "session_end"]
+    assert rows[0]["app"]["transmit_enabled"] is False
+    assert rows[1]["groups"]["A"]["radios"][0]["snr_db"] == 15.0
+    assert rows[-1]["reason"] == "stopped"
 
 
 # --- hardware helpers ------------------------------------------------------

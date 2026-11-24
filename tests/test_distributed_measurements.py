@@ -72,7 +72,7 @@ class DistributedMeasurementsTest(unittest.TestCase):
                 self.assertEqual(service.state, "running")
                 service.stop()
                 self.assertEqual(service.state, "idle")
-                self.assertIsNone(service.coordinator._session_log)
+                self.assertFalse(service.coordinator.session.active)
             finally:
                 service.coordinator.close()
 

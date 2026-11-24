@@ -61,7 +61,7 @@ Raw IQ is not persisted. Logs stay under `runtime.log_dir`, ignored by Git.
 
 ## Current limitations
 
-Session logs (JSONL) exist only in distributed mode. UDP commands to the nodes
+UDP commands to the nodes
 are not authenticated. Server state may retain the last
 reported node state; inspect `age_s` (the UI marks inventory stale after 10 s).
 The latest metric snapshot can remain after Stop; it is not live acquisition.

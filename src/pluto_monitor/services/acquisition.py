@@ -53,7 +53,11 @@ def acquire_once(
             iq = receivers[radio_id].read_samples()
             if iq_sink is not None:
                 iq_sink(timestamp, group_name, radio_id, iq)
-            metrics[group_name][radio_id] = selected.measure(iq, rf_config)
+            measured = selected.measure(iq, rf_config)
+            # Largest I or Q code (full scale 2048): a few codes means the RX
+            # gain is too low, values near full scale mean saturation.
+            measured["adc_peak"] = float(max(np.abs(iq.real).max(), np.abs(iq.imag).max()))
+            metrics[group_name][radio_id] = measured
 
     powers = {
         group: {radio: m["power_db"] for radio, m in radios.items()}

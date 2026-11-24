@@ -123,7 +123,7 @@ def _result_to_message(
             "uri": uri,
             **{
                 key: _finite_or_none(metrics.get(key))
-                for key in ("power_db", "snr_db", "ber", "cfo_hz")
+                for key in ("power_db", "snr_db", "ber", "cfo_hz", "adc_peak")
             },
         })
 

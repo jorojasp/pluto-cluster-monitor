@@ -266,8 +266,11 @@ function renderGroups(metrics) {
           : "";
         const power = radio.power_db === null ? "—" : radio.power_db.toFixed(2);
         const snr = radio.snr_db === null ? "—" : radio.snr_db.toFixed(2);
+        const adcPeak = !Number.isFinite(radio.adc_peak) ? "—"
+          : radio.adc_peak < 8 ? `${radio.adc_peak} (too low: raise RX gain)`
+          : radio.adc_peak > 1900 ? `${radio.adc_peak} (saturating: lower RX gain)` : radio.adc_peak;
         const ber = Number.isFinite(radio.ber) ? radio.ber.toExponential(1) : "—";
-        return `<tr class="${rowClass}"><td>${escapeHtml(radio.serial || radio.uri)}${badge}</td><td>${power}</td><td>${snr}</td><td>${ber}</td></tr>`;
+        return `<tr class="${rowClass}"><td>${escapeHtml(radio.serial || radio.uri)}${badge}</td><td>${power}</td><td>${snr}</td><td>${ber}</td><td>${adcPeak}</td></tr>`;
       })
       .join("");
 
@@ -279,7 +282,7 @@ function renderGroups(metrics) {
         <h3>Group ${escapeHtml(groupName)}</h3>
         <div class="group-summary">mean power=${meanPower} dB · mean noise=${meanNoise} dB</div>
         <table>
-          <thead><tr><th>Radio</th><th>Power (dB)</th><th>Est. SNR (dB)</th><th>BER</th></tr></thead>
+          <thead><tr><th>Radio</th><th>Power (dB)</th><th>Est. SNR (dB)</th><th>BER</th><th>ADC peak / 2048</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>

@@ -2,24 +2,20 @@ from __future__ import annotations
 
 import argparse
 import copy
-import json
-import uuid
 import socket
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
 from pluto_monitor.config.loader import load_config
 from pluto_monitor.network.messages import dumps_message, loads_message
+from pluto_monitor.services.session_log import SessionLog
 
 
 class DistributedRxCoordinator:
     def __init__(self, config: dict[str, Any]):
         self.config = config
-        self.session_id: str | None = None
-        self.session_log_path: str | None = None
-        self._session_log = None
+        self.session = SessionLog(config.get("runtime", {}).get("log_dir", "data/logs"))
         net = config["network"]
 
         self.metrics_host = str(net.get("metrics_host", "0.0.0.0"))
@@ -54,36 +50,22 @@ class DistributedRxCoordinator:
         self.running = False
         self.thread: threading.Thread | None = None
 
-    def _record(self, record: dict[str, Any]) -> None:
-        if self._session_log is not None:
-            try:
-                self._session_log.write(json.dumps(record, allow_nan=False) + "\n")
-                self._session_log.flush()
-            except (OSError, ValueError) as exc:
-                print(f"Session logging failed: {exc}")
+    @property
+    def session_id(self) -> str | None:
+        return self.session.session_id
+
+    @property
+    def session_log_path(self) -> str | None:
+        return self.session.path
 
     def start_session(self, app: dict, rf: dict) -> None:
         with self.lock:
-            self.end_session("replaced")
-            directory = Path(self.config.get("runtime", {}).get("log_dir", "data/logs"))
-            directory.mkdir(parents=True, exist_ok=True)
-            session_id = uuid.uuid4().hex
-            path = directory / f"session_{session_id}.jsonl"
-            stream = path.open("x", encoding="utf-8")
-            self.session_id = session_id
-            self.session_log_path = str(path.resolve())
-            self._session_log = stream
+            self.session.start(app, rf)
             self.latest_metrics.clear()
-            self._record({"type": "session_start", "session_id": session_id,
-                          "timestamp": time.time(), "app": app, "rf": rf})
 
     def end_session(self, reason: str = "stopped") -> None:
         with self.lock:
-            if self._session_log is not None:
-                self._record({"type": "session_end", "session_id": self.session_id,
-                              "timestamp": time.time(), "reason": reason})
-                self._session_log.close()
-                self._session_log = None
+            self.session.end(reason)
 
     def start(self) -> None:
         if self.running:
@@ -132,8 +114,8 @@ class DistributedRxCoordinator:
 
         with self.condition:
             if message_type == "rx_metrics":
-                self._record({**message, "session_id": self.session_id,
-                              "received_at": time.time()})
+                self.session.record({**message, "session_id": self.session_id,
+                                     "received_at": time.time()})
                 group = str(message.get("group", ""))
                 if group:
                     self.latest_metrics[group] = copy.deepcopy(message)

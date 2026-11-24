@@ -14,6 +14,7 @@ from pluto_monitor.hardware.transmitter import PlutoTransmitter
 from pluto_monitor.services.acquisition import AcquisitionResult, acquire_once
 from pluto_monitor.services.iq_recorder import recorder_from_config
 from pluto_monitor.services.local_radios import build_receivers, build_transmitter
+from pluto_monitor.services.session_log import SessionLog
 
 class ServiceStateError(RuntimeError):
     """Raised when an operation is invalid for the service's current state."""
@@ -67,6 +68,9 @@ def _result_to_json(
                     "snr_db": _safe_float(snr_map.get(radio_uri)),
                     "ber": _safe_float(extra.get("ber")),
                     "cfo_hz": _safe_float(extra.get("cfo_hz")),
+                    "noise_db": _safe_float(extra.get("noise_db")),
+                    "tone_frequency_hz": _safe_float(extra.get("tone_frequency_hz")),
+                    "adc_peak": _safe_float(extra.get("adc_peak")),
                     "is_strongest": bool(
                         summary is not None and radio_uri == summary.strongest_label
                     ),
@@ -122,6 +126,8 @@ class AcquisitionService:
         self._mode: Optional[str] = None
         self._latest_result: Optional[AcquisitionResult] = None
         self._recorder = None
+        self._session: Optional[SessionLog] = None
+        self._sequence = 0
 
     # ---- config -------------------------------------------------------
 
@@ -145,7 +151,9 @@ class AcquisitionService:
         status = asdict(self.get_status())
         with self._lock:
             status["tx"] = {"state": "running" if self._transmitter else "idle"}
-        status["session_id"] = None
+            session = self._session
+        status["session_id"] = session.session_id if session else None
+        status["session_log"] = session.path if session else None
         return status
 
     def metrics(self) -> Optional[dict[str, Any]]:
@@ -171,7 +179,10 @@ class AcquisitionService:
         with self._lock:
             if self._latest_result is None:
                 return None
-            return _result_to_json(self._latest_result, dict(self._radio_labels))
+            return {
+                "session_id": self._session.session_id if self._session else None,
+                **_result_to_json(self._latest_result, dict(self._radio_labels)),
+            }
 
     # ---- lifecycle ------------------------------------------------------
 
@@ -188,6 +199,7 @@ class AcquisitionService:
             validate_required_radios(config)
             resolved = resolve_topology(config)
             self._recorder = recorder_from_config(config)
+            self._start_session(config)
 
             # Store each resource as soon as it exists, so a later failure
             # always closes it and never leaves the transmitter on.
@@ -213,9 +225,21 @@ class AcquisitionService:
         except Exception as exc:
             self._cleanup_hardware()
             with self._lock:
+                self._end_session("start_failed")
                 self._state = "error"
                 self._error = str(exc)
             raise
+
+    def _start_session(self, config: dict[str, Any]) -> None:
+        session = SessionLog(config.get("runtime", {}).get("log_dir", "data/logs"))
+        session.start(config["app"], config["rf"], clusters=config.get("clusters"))
+        with self._lock:
+            self._session = session
+            self._sequence = 0
+
+    def _end_session(self, reason: str) -> None:
+        if self._session is not None:
+            self._session.end(reason)
 
     def stop(self) -> None:
         with self._lock:
@@ -233,6 +257,7 @@ class AcquisitionService:
         self._cleanup_hardware()
 
         with self._lock:
+            self._end_session("stopped")
             self._state = "idle"
             self._error = None
             self._thread = None
@@ -282,10 +307,21 @@ class AcquisitionService:
                     self._state = "error"
                     self._error = str(exc)
                 self._cleanup_hardware()  # never keep transmitting unattended
+                with self._lock:
+                    self._end_session("acquisition_error")
                 return
 
             with self._lock:
                 self._latest_result = result
+                self._sequence += 1
+                if self._session is not None:
+                    self._session.record({
+                        "type": "local_metrics",
+                        "session_id": self._session.session_id,
+                        "sequence": self._sequence,
+                        "mode": mode,
+                        **_result_to_json(result, dict(self._radio_labels)),
+                    })
 
             elapsed = time.monotonic() - t0
             self._stop_event.wait(max(0.0, update_period_s - elapsed))
