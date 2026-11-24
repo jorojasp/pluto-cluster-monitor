@@ -7,23 +7,24 @@ uses this interface, so a new mode is added here and nowhere else.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Protocol
 
 import numpy as np
 
-from pluto_monitor.dsp import single_carrier
+from pluto_monitor.dsp import ofdm, single_carrier
 from pluto_monitor.dsp.sinewave import build_tone, compute_sinewave_detailed_metrics
 
 
 class Mode(Protocol):
     name: str
-    # Interface control group shown for this mode: "tone" or "digital".
+    # Interface control group shown for this mode: "tone", "digital" or "ofdm".
     controls: str
 
     def validate(self, rf: dict[str, Any]) -> None: ...
     def build_waveform(self, rf: dict[str, Any]) -> np.ndarray: ...
     def capture_samples(self, rf: dict[str, Any]) -> int: ...
-    def measure(self, iq: np.ndarray, rf: dict[str, Any]) -> dict[str, float]: ...
+    def measure(self, iq: np.ndarray, rf: dict[str, Any]) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,42 @@ class SingleCarrierMode:
         )
 
 
+# Viterbi decoding time grows with the payload.
+MAX_OFDM_BITS = 16_384
+
+
+@lru_cache(maxsize=8)
+def ofdm_frame(modulation: single_carrier.Modulation, data_bits: int) -> ofdm.OfdmFrame:
+    return ofdm.OfdmFrame(modulation, data_bits)
+
+
+@dataclass(frozen=True)
+class OfdmMode:
+    modulation: single_carrier.Modulation
+    controls: str = "ofdm"
+
+    @property
+    def name(self) -> str:
+        return f"OFDM-{self.modulation.name}"
+
+    def _frame(self, rf: dict[str, Any]) -> ofdm.OfdmFrame:
+        return ofdm_frame(self.modulation, int(rf["data_bits"]))
+
+    def validate(self, rf: dict[str, Any]) -> None:
+        bits = int(rf["data_bits"])
+        if bits % 8 or not 8 <= bits <= MAX_OFDM_BITS:
+            raise ValueError(f"data_bits must be a multiple of 8 up to {MAX_OFDM_BITS} for OFDM")
+
+    def build_waveform(self, rf: dict[str, Any]) -> np.ndarray:
+        return self._frame(rf).waveform()
+
+    def capture_samples(self, rf: dict[str, Any]) -> int:
+        return max(int(rf["samples_per_frame"]), 2 * self._frame(rf).samples + 16)
+
+    def measure(self, iq: np.ndarray, rf: dict[str, Any]) -> dict[str, Any]:
+        return ofdm.analyze(self._frame(rf), iq, float(rf["sample_rate_hz"]))
+
+
 MODES: dict[str, Mode] = {
     mode.name: mode
     for mode in (
@@ -96,6 +133,8 @@ MODES: dict[str, Mode] = {
         SingleCarrierMode(single_carrier.BPSK),
         SingleCarrierMode(single_carrier.QPSK),
         SingleCarrierMode(single_carrier.QAM16),
+        OfdmMode(single_carrier.QPSK),
+        OfdmMode(single_carrier.QAM16),
     )
 }
 

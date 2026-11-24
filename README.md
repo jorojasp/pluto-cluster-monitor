@@ -20,7 +20,8 @@ metrics and a periodically refreshed hardware inventory. Add radios to the
 appropriate receiver config to expand a group; throughput and power delivery
 must then be checked experimentally.
 
-SineWave, BPSK, QPSK and 16QAM have TX/RX code paths and synthetic tests. The
+SineWave, BPSK, QPSK, 16QAM and [coded OFDM](docs/11_ofdm.md) have TX/RX code paths
+and synthetic tests. The
 digital modes also report BER. All nodes must run the same version, because the
 payload and frame layout are shared.
 **Only SineWave has completed the current physical gain/proximity checks.**
@@ -141,3 +142,4 @@ Set `runtime.save_iq: true` to keep raw captures under `data/raw/` (local modes)
 8. [Measurement corrections and validation protocol](docs/08_measurement_validation.md)
 9. [Raspberry Pi setup and recovery](docs/09_raspberry_pi_setup.md)
 10. [PC installation on Linux and Windows](docs/10_pc_installation.md)
+11. [Coded OFDM](docs/11_ofdm.md)

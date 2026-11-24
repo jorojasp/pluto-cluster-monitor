@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 
 from pluto_monitor.dsp.modes import get_mode
 from pluto_monitor.hardware.receiver import PlutoReceiver
 from pluto_monitor.services.clustering import GroupSummary, summarize_group
+
+# Scalar metrics sent to the dashboard and the session logs.
+REPORTED = (
+    "power_db", "snr_db", "noise_db", "ber", "ber_coded", "frame_ok", "throughput_bps",
+    "cfo_hz", "tone_frequency_hz", "adc_peak",
+)
+# Per-subcarrier metrics of OFDM modes (channel state information).
+REPORTED_LISTS = ("csi_db", "csi_phase", "snr_per_subcarrier_db")
 
 # Called with (timestamp, group, radio_id, iq) for every capture.
 IqSink = Callable[[float, str, str, np.ndarray], None]
@@ -24,7 +32,7 @@ class AcquisitionResult:
     group_mean_power_db: dict[str, float]
     group_mean_noise_db: dict[str, float]
     # Full metrics of each radio: group -> radio_id -> metric name -> value.
-    group_metrics: dict[str, dict[str, dict[str, float]]] = field(default_factory=dict)
+    group_metrics: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
 
 
 def _mean_db(values: list[float]) -> float:
@@ -45,7 +53,7 @@ def acquire_once(
     """Capture and measure every radio once. Radios are read one after another."""
     selected = get_mode(mode)
     timestamp = time.time()
-    metrics: dict[str, dict[str, dict[str, float]]] = {}
+    metrics: dict[str, dict[str, dict[str, Any]]] = {}
 
     for group_name, group_data in groups.items():
         metrics[group_name] = {}

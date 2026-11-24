@@ -11,7 +11,12 @@ from pluto_monitor.hardware.discovery import resolve_topology, validate_required
 from pluto_monitor.hardware.factory import close_receivers
 from pluto_monitor.hardware.receiver import PlutoReceiver
 from pluto_monitor.hardware.transmitter import PlutoTransmitter
-from pluto_monitor.services.acquisition import AcquisitionResult, acquire_once
+from pluto_monitor.services.acquisition import (
+    REPORTED,
+    REPORTED_LISTS,
+    AcquisitionResult,
+    acquire_once,
+)
 from pluto_monitor.services.iq_recorder import recorder_from_config
 from pluto_monitor.services.local_radios import build_receivers, build_transmitter
 from pluto_monitor.services.session_log import SessionLog
@@ -66,11 +71,12 @@ def _result_to_json(
                     "serial": radio_labels.get(radio_uri),
                     "power_db": _safe_float(power_db),
                     "snr_db": _safe_float(snr_map.get(radio_uri)),
-                    "ber": _safe_float(extra.get("ber")),
-                    "cfo_hz": _safe_float(extra.get("cfo_hz")),
-                    "noise_db": _safe_float(extra.get("noise_db")),
-                    "tone_frequency_hz": _safe_float(extra.get("tone_frequency_hz")),
-                    "adc_peak": _safe_float(extra.get("adc_peak")),
+                    **{
+                        key: _safe_float(extra.get(key))
+                        for key in REPORTED
+                        if key not in ("power_db", "snr_db")
+                    },
+                    **{key: extra[key] for key in REPORTED_LISTS if key in extra},
                     "is_strongest": bool(
                         summary is not None and radio_uri == summary.strongest_label
                     ),

@@ -26,6 +26,12 @@ def print_result(result: AcquisitionResult) -> None:
             line = f"  {radio_uri}: {metrics['power_db']:.2f} dB | SNR: {metrics['snr_db']:.2f} dB"
             if not math.isnan(metrics.get("ber", float("nan"))):
                 line += f" | BER: {metrics['ber']:.2e} | CFO: {metrics['cfo_hz']:.0f} Hz"
+            if not math.isnan(metrics.get("frame_ok", float("nan"))):
+                line += (
+                    f" | BER after FEC: {metrics['ber_coded']:.2e}"
+                    f" | CRC {'ok' if metrics['frame_ok'] else 'FAIL'}"
+                    f" | {metrics['throughput_bps'] / 1e6:.2f} Mb/s"
+                )
             print(line)
 
         summary = result.group_summaries[group_name]

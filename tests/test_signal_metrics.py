@@ -156,6 +156,8 @@ def test_tx_dac_codes_preserve_all_modes():
     tx = _transmitter()
     rms_values = []
     for mode in MODES.values():
+        if mode.controls == "ofdm":
+            continue  # its peaks limit the drive; see tests/test_ofdm.py
         wave = mode.build_waveform(RF)
         tx.transmit_repeat(wave)
         sent = tx._device.tx.call_args.args[0]

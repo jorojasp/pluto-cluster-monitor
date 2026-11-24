@@ -16,7 +16,12 @@ from pluto_monitor.hardware.factory import close_receivers, connect_receivers
 from pluto_monitor.hardware.receiver import PlutoReceiver
 from pluto_monitor.network.messages import dumps_message, loads_message
 from pluto_monitor.network.udp_client import UdpJsonClient
-from pluto_monitor.services.acquisition import AcquisitionResult, acquire_once
+from pluto_monitor.services.acquisition import (
+    REPORTED,
+    REPORTED_LISTS,
+    AcquisitionResult,
+    acquire_once,
+)
 
 MAX_CONSECUTIVE_ERRORS = 3
 INVENTORY_PERIOD_S = 10.0
@@ -123,8 +128,9 @@ def _result_to_message(
             "uri": uri,
             **{
                 key: _finite_or_none(metrics.get(key))
-                for key in ("power_db", "snr_db", "ber", "cfo_hz", "adc_peak")
+                for key in REPORTED
             },
+            **{key: metrics[key] for key in REPORTED_LISTS if key in metrics},
         })
 
     valid = [radio for radio in radios if radio["power_db"] is not None]

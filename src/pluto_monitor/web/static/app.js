@@ -22,7 +22,7 @@ const els = {
   legendNoise: document.getElementById("legend-noise"),
 };
 
-// Mode name -> control group ("tone" or "digital"), from /api/config.
+// Mode name -> control group ("tone", "digital" or "ofdm"), from /api/config.
 const modeControls = new Map([["SineWave", "tone"], ["BPSK", "digital"], ["QPSK", "digital"], ["16QAM", "digital"]]);
 
 const configFieldIds = [
@@ -56,9 +56,11 @@ function colorForGroup(name) {
 }
 
 function updateModeFieldVisibility() {
-  const isSine = modeControls.get(els.mode.value) !== "digital";
-  els.toneField.style.display = isSine ? "flex" : "none";
-  els.digitalFields.style.display = isSine ? "none" : "grid";
+  const controls = modeControls.get(els.mode.value) ?? "tone";
+  els.toneField.style.display = controls === "tone" ? "flex" : "none";
+  els.digitalFields.style.display = controls === "tone" ? "none" : "grid";
+  // OFDM has no samples-per-symbol setting.
+  document.getElementById("sps").parentElement.style.display = controls === "ofdm" ? "none" : "";
 }
 
 // Start stays disabled until the form holds the server configuration.
