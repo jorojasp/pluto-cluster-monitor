@@ -18,7 +18,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-pluto = ["pyadi-iio>=0.0.17"]
+# pylibiio 1.0 binds the libiio v1 C API (libiio.so.1 / libiio1.dll); the distro
+# packages, Raspbian and the Windows installer used here provide libiio 0.2x.
+pluto = ["pyadi-iio>=0.0.17", "pylibiio>=0.23.1,<1.0"]
 local = ["matplotlib>=3.8"]
 web = [
   "pydantic>=2.6",

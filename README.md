@@ -67,11 +67,20 @@ is recorded as JSONL under `data/logs/`; these files contain metrics, not raw IQ
 
 ## PC installation and tests
 
-Python 3.10+ is required. For a full development environment:
+Python 3.10+ and the libiio 0.2x C library are required. One-command setup
+(details, drivers and troubleshooting in [PC installation](docs/10_pc_installation.md)):
+
+```bash
+bash scripts/install_linux.sh                                   # Linux
+powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1   # Windows
+```
+
+Manual setup after installing libiio (and, on Linux, the udev rules):
 
 ```bash
 python -m venv .venv
-# Linux/macOS: source .venv/bin/activate
+# Linux/macOS (bash/zsh): source .venv/bin/activate
+# Linux/macOS (fish): source .venv/bin/activate.fish
 # Windows PowerShell: .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[pluto,local,web,dev]"
 python -m pytest -q
@@ -121,3 +130,4 @@ python scripts/run_local.py
 7. [Distributed web frontend and API](docs/07_web_frontend.md)
 8. [Measurement corrections and validation protocol](docs/08_measurement_validation.md)
 9. [Raspberry Pi setup and recovery](docs/09_raspberry_pi_setup.md)
+10. [PC installation on Linux and Windows](docs/10_pc_installation.md)
