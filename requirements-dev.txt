@@ -1,3 +1,0 @@
--r requirements-web.txt
--r requirements-local.txt
-pytest>=8.0
