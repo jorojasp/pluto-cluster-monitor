@@ -80,13 +80,14 @@ Then, on both OSes (stay in the repository root; `run_local.py` opens
 python scripts/list_radios.py          # serial and URI of each connected Pluto
 python -m pytest -q
 node tests/test_frontend_history.mjs
-python scripts/run_local.py            # local USB radios, configs/default.yaml
+python scripts/run_local.py            # local USB radios, configs/default.yaml (transmits)
+python scripts/run_web.py --config configs/default.yaml   # same radios in the browser
 ```
 
 Put the serials reported by `list_radios.py` into `configs/default.yaml`
 (`clusters.groups.*.radio_serials`, `clusters.transmitter_serial`).
-`run_local.py` always loads that file: it has no `--config` option and does not
-read `configs/local.yaml`. A `local:` context with serial `UNKNOWN` is the PC's
+Another file can be used with `--config`, for example `configs/local.yaml`, which
+git ignores. A `local:` context with serial `UNKNOWN` is the PC's
 own sensors, not a Pluto.
 
 ## Troubleshooting

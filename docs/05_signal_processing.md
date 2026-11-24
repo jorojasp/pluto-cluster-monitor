@@ -23,6 +23,9 @@ drive. Hardware TX gain remains a separate setting.
 
 ## SineWave
 
+The transmitted tone is rounded to a whole number of cycles per buffer, so the
+repeated buffer has no phase jump (10 kHz becomes 10009.8 Hz with 4096 samples).
+
 The estimator searches near the requested tone, allowing oscillator offset,
 and gates on a spectral peak. It then fits a complex sinusoid and DC term.
 SNR is fitted tone power divided by residual power; estimated noise is the
@@ -37,20 +40,28 @@ yet exported in the per-radio network metrics.
 
 ## BPSK, QPSK and 16QAM
 
-Digital paths generate a repeated 39-symbol Barker-derived preamble followed
-by a random payload and pulse shaping. Reception uses matched filtering,
-sample-phase selection, preamble correlation, phase-drift correction, a scalar
-channel estimate and symbol decisions. The distributed receiver buffer spans
-at least two cyclic frames to allow arbitrary capture alignment.
+All three share `dsp/single_carrier.py`. A frame is a 39-symbol Barker-derived
+preamble followed by blocks of up to 32 payload symbols, each closed by 4 pilot
+symbols. The payload is a fixed pseudo-random sequence, so BER can be measured;
+mapping is Gray. Pulse shaping is circular because the radio repeats the buffer.
 
-SNR uses decision-directed error relative to decided symbols. Equivalent
-input-referred noise/error power is `P_total / (1 + SNR_linear)`. This shares
-the raw IQ power reference but includes distortion and synchronization error;
-it is not a calibrated thermal-noise measurement. Failed preamble detection
-leaves SNR/error unavailable, while total power remains measurable.
+Reception searches the preamble jointly in time and carrier offset (up to
++/-40 kHz, less at low symbol rates), then refines fractional timing, frequency
+and DC. Phase is interpolated between preamble and pilots, without symbol
+decisions, so it does not slip at low SNR. Captures span two frames and always
+contain a complete one.
 
-These paths pass synthetic signal tests. Physical modulation validation,
-frequency-offset robustness, BER and precision calibration remain pending.
+SNR compares the recovered payload with the known symbols, so it stays valid when
+decisions are wrong. Equivalent input-referred noise/error power is
+`P_total / (1 + SNR_linear)`. It includes distortion and synchronization error and
+is not a calibrated thermal-noise measurement. The matched filter gains
+`10*log10(sps)` dB over the sample SNR. BER uses only pilots for amplitude and
+phase. Without a detected frame, SNR, BER and CFO are unavailable.
+
+Synthetic tests check SNR within 0.8 dB, BER against theory, carrier offsets up to
+38 kHz, DC and short payloads. Reported SNR saturates around 30-38 dB, and a 25 ppm
+sample-clock difference costs a few dB with long frames. Physical modulation
+validation and calibration remain pending.
 
 ## Histories
 

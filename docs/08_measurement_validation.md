@@ -17,7 +17,7 @@ offset), then fits a complex sinusoid and DC offset. Noise is the mean-square
 residual. SNR is fitted tone power divided by residual power. Without a
 significant spectral peak, SNR is unavailable instead of fitting pure noise.
 
-Digital modes report decision-directed, EVM-based SNR after synchronization.
+Digital modes report EVM-based SNR against the known payload after synchronization.
 The input-referred noise/error estimate is P_total/(1 + SNR_linear), so it
 shares the raw IQ power reference. This is an equivalent estimate that includes
 synchronization error and distortion; it is not a thermal-noise calibration.

@@ -2,13 +2,15 @@
 
 ## Runtime flow
 
-`web/server.py` uses `DistributedService`, `DistributedRxCoordinator` and
-`LocalTxController`. The server runs on `txpi`, which also owns the TX Pluto.
-The two receiver processes run on `rxpi1` and `rxpi2`; USB IQ acquisition and
-DSP happen on those boards. Only JSON metrics cross the LAN.
+`web/server.py` picks the provider from the configuration file:
 
-The earlier `web/service.py` contains the single-PC `AcquisitionService` and
-its tests. It is not the provider selected by the current web server.
+- `clusters` section: `AcquisitionService` (`web/service.py`), radios on this PC.
+- `network` section: `DistributedService`, with `DistributedRxCoordinator` and
+  `LocalTxController`. The server runs on `txpi`, which also owns the TX Pluto.
+  `rxpi1` and `rxpi2` do USB acquisition and DSP; only JSON metrics cross the LAN.
+
+Start and Stop do not block status requests or the browser updates. If local
+acquisition fails, the transmitter is stopped.
 
 The static HTML/CSS/JavaScript needs no CDN or frontend build. Group A is blue
 and group B orange. Serial inventories are reported even while acquisition is
@@ -17,10 +19,12 @@ idle; missing radios and stale/offline nodes are labeled separately.
 ## Start
 
 ```bash
-python scripts/run_web.py --config configs/rpi_server.yaml --port 8000
+python scripts/run_web.py --config configs/default.yaml                    # this PC
+python scripts/run_web.py --config configs/rpi_server.yaml --host 0.0.0.0  # Raspberry Pi
 ```
 
-This requires the RX processes to be running as described in the
+The default host is 127.0.0.1. There is no login, so expose the server only on a
+private network. The distributed case requires the RX processes described in the
 [Raspberry Pi guide](09_raspberry_pi_setup.md). The CLI default is the server
 configuration. To select another file set `--config`; direct uvicorn launches
 can instead set `PLUTO_MONITOR_CONFIG`.
@@ -30,7 +34,7 @@ can instead set `PLUTO_MONITOR_CONFIG`.
 | Route | Behavior |
 | --- | --- |
 | `GET /` | Dashboard |
-| `GET /api/config` | Base server app/RF settings for the form |
+| `GET /api/config` | Base app/RF settings and the available modes for the form |
 | `GET /api/status` | Global lifecycle, per-node inventories/age, TX state, last session ID/path |
 | `GET /api/metrics` | Latest per-group metrics, individual timestamps and sequence numbers |
 | `POST /api/start` | Start RX nodes and optionally TX; body accepts RF/mode/timing overrides and `transmit_enabled` |
@@ -57,10 +61,10 @@ Raw IQ is not persisted. Logs stay under `runtime.log_dir`, ignored by Git.
 
 ## Current limitations
 
-Node disconnection can terminate an RX process because UDP/name-resolution
-errors are not recovered automatically. Server state may retain the last
+Session logs (JSONL) exist only in distributed mode. UDP commands to the nodes
+are not authenticated. Server state may retain the last
 reported node state; inspect `age_s` (the UI marks inventory stale after 10 s).
 The latest metric snapshot can remain after Stop; it is not live acquisition.
 After recovery, use Stop to clear the lifecycle error and repeat the session.
-Automatic process restart, USB reset, snapshot export and raw-IQ capture are
-not implemented. See [experimental limits](06_experiments_and_results.md).
+Automatic process restart, USB reset and snapshot export are not implemented;
+raw-IQ capture (`runtime.save_iq`) is available in local modes only. See [experimental limits](06_experiments_and_results.md).

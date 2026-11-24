@@ -46,7 +46,7 @@ Then start the web coordinator and TX controller on txpi:
 
 ```bash
 source .venv/bin/activate
-python scripts/run_web.py --config configs/rpi_server.yaml --port 8000
+python scripts/run_web.py --config configs/rpi_server.yaml --host 0.0.0.0 --port 8000
 ```
 
 Open `http://txpi.local:8000`. Check that all group serials are detected before
@@ -77,9 +77,9 @@ Use explicit target directories; do not mix the checkout and laboratory copy.
 
 ## LAN recovery
 
-A receiver process can exit after a DNS or UDP failure. Reconnecting the cable
-alone does not restart it. Check `hostname`, `getent hosts txpi.local`, the
-receiver process and its log. Restart the missing RX process, then press Stop
+A receiver process keeps running after a DNS or UDP failure and reports again when
+the network returns. If a node stays offline, check `hostname`,
+`getent hosts txpi.local`, the receiver process and its log. Restart the missing RX process, then press Stop
 on the server to return to idle. Wait for fresh node state and serial inventory
 before repeating the entire interrupted run. Do not compare a stale group's
 last snapshot against another group's fresh metrics.

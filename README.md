@@ -20,13 +20,15 @@ metrics and a periodically refreshed hardware inventory. Add radios to the
 appropriate receiver config to expand a group; throughput and power delivery
 must then be checked experimentally.
 
-SineWave, BPSK, QPSK and 16QAM have TX/RX code paths and synthetic tests.
+SineWave, BPSK, QPSK and 16QAM have TX/RX code paths and synthetic tests. The
+digital modes also report BER. All nodes must run the same version, because the
+payload and frame layout are shared.
 **Only SineWave has completed the current physical gain/proximity checks.**
 Digital modulation validation on this distributed hardware remains pending.
 
-The original single-PC console/Matplotlib path remains available through
-`scripts/run_local.py` with `configs/default.yaml`. The web server currently
-uses the distributed provider; `web/service.py` is the earlier local service.
+Radios attached to one PC can be used in two ways with `configs/default.yaml`:
+`scripts/run_local.py` (console and Matplotlib) or `scripts/run_web.py` (browser).
+The web server picks the local or distributed provider from the configuration.
 
 ## Start the distributed system
 
@@ -52,10 +54,13 @@ python -m pluto_monitor.nodes.rx_node --config configs/rpi_group_b.yaml
 On `txpi`:
 
 ```bash
-python scripts/run_web.py --config configs/rpi_server.yaml --port 8000
+python scripts/run_web.py --config configs/rpi_server.yaml --host 0.0.0.0 --port 8000
 ```
 
-Open `http://txpi.local:8000` from another machine on the same LAN. The sample
+Open `http://txpi.local:8000` from another machine on the same LAN. **There is no
+login:** with `--host 0.0.0.0` anyone on that network can start the transmitter, so
+use a private lab network. Without `--host` only the local machine can connect.
+The sample
 server configuration starts with TX disabled and TX gain -40 dB. Check
 **Enable transmitter** before Start when transmission is wanted. Uncheck it
 for a background measurement. Settings apply to the next Start.
@@ -87,30 +92,35 @@ python -m pytest -q
 node tests/test_frontend_history.mjs
 ```
 
-For local USB radios on the PC:
+For local USB radios on the PC (**both transmit** unless `app.transmit_enabled` is
+false in the config or the box is unchecked in the browser):
 
 ```bash
-python scripts/run_local.py
+python scripts/run_local.py --config configs/default.yaml
+python scripts/run_web.py --config configs/default.yaml   # http://127.0.0.1:8000
 ```
+
+Set `runtime.save_iq: true` to keep raw captures under `data/raw/` (local modes).
 
 ## Measurement limits
 
 - Power is relative to IQ sample units, **not calibrated dBm**, and includes DC.
 - SineWave estimates a tone and its residual. Receiver spurs can also yield a
   tone estimate with TX off; SNR alone does not identify the intended source.
-- Digital SNR is decision-directed; estimated error includes distortion and
-  synchronization error, not only thermal noise.
-- Startup spikes and variable DC offsets, particularly in A2, remain unresolved.
+- Digital SNR compares symbols with the known payload; estimated error includes
+  distortion and synchronization error, not only thermal noise.
+- Receivers discard the startup transient and stale queued buffers. Variable DC
+  offsets, particularly in A2, remain unresolved for SineWave and total power.
 - The lab receiver Pis reported undervoltage during these tests. Long-term
   stability and additional-radio capacity have not been established.
-- A LAN/name-resolution failure can terminate an RX process. Recovery and
-  automatic startup are not implemented; restart the node and reset the server
-  with Stop before repeating an interrupted measurement.
+- RX nodes survive LAN/name-resolution failures, but automatic startup is not
+  implemented. Press Stop before repeating an interrupted measurement.
 
 ## Repository map
 
 - `src/pluto_monitor/hardware/`: serial discovery and radio access.
-- `src/pluto_monitor/dsp/`: waveform generation and metric estimators.
+- `src/pluto_monitor/dsp/`: waveform generation and metric estimators;
+  `modes.py` is the registry where new modes are added.
 - `src/pluto_monitor/services/`: acquisition and group comparison.
 - `src/pluto_monitor/nodes/`, `network/`: distributed roles and UDP messages.
 - `src/pluto_monitor/web/`: API, lifecycle and static browser dashboard.
