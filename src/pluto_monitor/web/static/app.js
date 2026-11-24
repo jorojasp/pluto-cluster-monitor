@@ -61,11 +61,16 @@ function updateModeFieldVisibility() {
   els.digitalFields.style.display = isSine ? "none" : "grid";
 }
 
+// Start stays disabled until the form holds the server configuration.
+let configLoaded = false;
+// Error of the last Start/Stop request; status updates must not erase it.
+let requestError = null;
+
 function setStatus(state) {
   els.statusDot.className = `dot ${state}`;
   els.statusText.textContent = state;
   const running = state === "running" || state === "starting" || state === "stopping";
-  els.btnStart.disabled = running;
+  els.btnStart.disabled = running || !configLoaded;
   els.btnStop.disabled = !running;
   for (const id of [...configFieldIds, "mode", "transmit_enabled"]) {
     document.getElementById(id).disabled = running;
@@ -85,7 +90,7 @@ function showError(message) {
 async function loadConfigDefaults() {
   try {
     const res = await fetch("/api/config");
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const config = await res.json();
     const rf = config.rf || {};
     const appCfg = config.app || {};
@@ -108,8 +113,13 @@ async function loadConfigDefaults() {
     els.mode.value = appCfg.mode || "SineWave";
     document.getElementById("transmit_enabled").checked = appCfg.transmit_enabled ?? true;
     updateModeFieldVisibility();
+    configLoaded = true;
+    requestError = null;
+    els.btnStart.disabled = false;
   } catch (err) {
-    console.error("Could not load /api/config", err);
+    requestError = `Could not load the configuration (${err.message}). Retrying...`;
+    showError(requestError);
+    setTimeout(loadConfigDefaults, 2000);
   }
 }
 
@@ -125,6 +135,7 @@ function collectOverrides() {
 }
 
 async function startAcquisition() {
+  requestError = null;
   showError(null);
   els.btnStart.disabled = true;
   try {
@@ -135,7 +146,8 @@ async function startAcquisition() {
     });
     const data = await res.json();
     if (!res.ok) {
-      showError(data.detail || "Could not start acquisition.");
+      requestError = typeof data.detail === "string" ? data.detail : "Could not start acquisition.";
+      showError(requestError);
       els.btnStart.disabled = false;
       return;
     }
@@ -143,24 +155,28 @@ async function startAcquisition() {
     renderConnectedRadios(data);
     resetHistory();
   } catch (err) {
-    showError(String(err));
+    requestError = String(err);
+    showError(requestError);
     els.btnStart.disabled = false;
   }
 }
 
 async function stopAcquisition() {
+  requestError = null;
   els.btnStop.disabled = true;
   try {
     const res = await fetch("/api/stop", { method: "POST" });
     const data = await res.json();
     if (!res.ok) {
-      showError(data.detail || "Could not stop acquisition.");
+      requestError = typeof data.detail === "string" ? data.detail : "Could not stop acquisition.";
+      showError(requestError);
       els.btnStop.disabled = false;
       return;
     }
     setStatus(data.state);
   } catch (err) {
-    showError(String(err));
+    requestError = String(err);
+    showError(requestError);
     els.btnStop.disabled = false;
   }
 }
@@ -382,7 +398,7 @@ function connectWebSocket() {
     const metrics = payload.metrics;
 
     setStatus(status.state);
-    showError(status.error);
+    showError(requestError || status.error);
     renderConnectedRadios(status);
     renderGroups(metrics);
     document.getElementById("session-info").textContent = status.session_id
@@ -399,6 +415,9 @@ function connectWebSocket() {
   };
 
   ws.onclose = () => {
+    els.statusDot.className = "dot error";
+    els.statusText.textContent = "server unreachable";
+    els.btnStart.disabled = true;
     setTimeout(connectWebSocket, 1500);
   };
 
