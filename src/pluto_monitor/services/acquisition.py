@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Callable
 
 import numpy as np
 
-from pluto_monitor.dsp.bpsk import compute_bpsk_detailed_metrics, compute_bpsk_metrics
-from pluto_monitor.dsp.qam16 import compute_qam16_detailed_metrics, compute_qam16_metrics
-from pluto_monitor.dsp.qpsk import compute_qpsk_detailed_metrics, compute_qpsk_metrics
-from pluto_monitor.dsp.sinewave import compute_sinewave_detailed_metrics
+from pluto_monitor.dsp.modes import get_mode
 from pluto_monitor.hardware.receiver import PlutoReceiver
 from pluto_monitor.services.clustering import GroupSummary, summarize_group
+
+# Called with (timestamp, group, radio_id, iq) for every capture.
+IqSink = Callable[[float, str, str, np.ndarray], None]
 
 
 @dataclass
@@ -22,38 +23,16 @@ class AcquisitionResult:
     strongest_group: str
     group_mean_power_db: dict[str, float]
     group_mean_noise_db: dict[str, float]
+    # Full metrics of each radio: group -> radio_id -> metric name -> value.
+    group_metrics: dict[str, dict[str, dict[str, float]]] = field(default_factory=dict)
 
 
-def _compute_metrics_for_mode(
-    iq,
-    mode: str,
-    rf_config: dict,
-) -> tuple[float, float]:
-    if mode == "BPSK":
-        return compute_bpsk_metrics(
-            iq=iq,
-            sample_rate_hz=rf_config["sample_rate_hz"],
-            data_bits=rf_config["data_bits"],
-            sps=rf_config["sps"],
-        )
-
-    if mode == "QPSK":
-        return compute_qpsk_metrics(
-            iq=iq,
-            sample_rate_hz=rf_config["sample_rate_hz"],
-            data_bits=rf_config["data_bits"],
-            sps=rf_config["sps"],
-        )
-
-    if mode == "16QAM":
-        return compute_qam16_metrics(
-            iq=iq,
-            sample_rate_hz=rf_config["sample_rate_hz"],
-            data_bits=rf_config["data_bits"],
-            sps=rf_config["sps"],
-        )
-
-    raise NotImplementedError(f"Mode {mode} is not implemented in acquisition")
+def _mean_db(values: list[float]) -> float:
+    """Average linear powers, ignoring NaN, and convert to dB."""
+    valid = [value for value in values if not np.isnan(value)]
+    if not valid:
+        return float("nan")
+    return float(10.0 * np.log10(np.mean(valid) + 1e-12))
 
 
 def acquire_once(
@@ -61,129 +40,47 @@ def acquire_once(
     receivers: dict[str, PlutoReceiver],
     mode: str,
     rf_config: dict,
+    iq_sink: IqSink | None = None,
 ) -> AcquisitionResult:
+    """Capture and measure every radio once. Radios are read one after another."""
+    selected = get_mode(mode)
     timestamp = time.time()
-    group_powers: dict[str, dict[str, float]] = {}
-    group_snrs: dict[str, dict[str, float]] = {}
-    group_summaries: dict[str, GroupSummary] = {}
-    group_mean_power_db: dict[str, float] = {}
-    group_mean_noise_db: dict[str, float] = {}
-
-    strongest_group = "---"
-    strongest_group_peak = float("-inf")
+    metrics: dict[str, dict[str, dict[str, float]]] = {}
 
     for group_name, group_data in groups.items():
-        power_map: dict[str, float] = {}
-        snr_map: dict[str, float] = {}
-
-        group_signal_linear: list[float] = []
-        group_noise_linear: list[float] = []
-
+        metrics[group_name] = {}
         for radio_id in group_data["radio_ids"]:
-            receiver = receivers[radio_id]
-            iq = receiver.read_samples()
+            iq = receivers[radio_id].read_samples()
+            if iq_sink is not None:
+                iq_sink(timestamp, group_name, radio_id, iq)
+            metrics[group_name][radio_id] = selected.measure(iq, rf_config)
 
-            if mode == "SineWave":
-                metrics = compute_sinewave_detailed_metrics(
-                    iq, sample_rate_hz=rf_config["sample_rate_hz"],
-                    tone_frequency_hz=rf_config.get("tone_frequency_hz"),
-                )
-                power_db = metrics["power_db"]
-                snr_db = metrics["snr_db"]
-
-                if not np.isnan(metrics["signal_power"]):
-                    group_signal_linear.append(metrics["signal_power"])
-                if not np.isnan(metrics["noise_power"]):
-                    group_noise_linear.append(metrics["noise_power"])
-
-            elif mode == "BPSK":
-                metrics = compute_bpsk_detailed_metrics(
-                    iq=iq,
-                    sample_rate_hz=rf_config["sample_rate_hz"],
-                    data_bits=rf_config["data_bits"],
-                    sps=rf_config["sps"],
-                )
-                power_db = metrics["power_db"]
-                snr_db = metrics["snr_db"]
-
-                if not np.isnan(metrics["signal_power"]):
-                    group_signal_linear.append(metrics["signal_power"])
-                if not np.isnan(metrics["noise_power"]):
-                    group_noise_linear.append(metrics["noise_power"])
-
-            elif mode == "QPSK":
-                metrics = compute_qpsk_detailed_metrics(
-                    iq=iq,
-                    sample_rate_hz=rf_config["sample_rate_hz"],
-                    data_bits=rf_config["data_bits"],
-                    sps=rf_config["sps"],
-                )
-                power_db = metrics["power_db"]
-                snr_db = metrics["snr_db"]
-
-                if not np.isnan(metrics["signal_power"]):
-                    group_signal_linear.append(metrics["signal_power"])
-                if not np.isnan(metrics["noise_power"]):
-                    group_noise_linear.append(metrics["noise_power"])
-
-            elif mode == "16QAM":
-                metrics = compute_qam16_detailed_metrics(
-                    iq=iq,
-                    sample_rate_hz=rf_config["sample_rate_hz"],
-                    data_bits=rf_config["data_bits"],
-                    sps=rf_config["sps"],
-                )
-                power_db = metrics["power_db"]
-                snr_db = metrics["snr_db"]
-
-                if not np.isnan(metrics["signal_power"]):
-                    group_signal_linear.append(metrics["signal_power"])
-                if not np.isnan(metrics["noise_power"]):
-                    group_noise_linear.append(metrics["noise_power"])
-
-            else:
-                power_db, snr_db = _compute_metrics_for_mode(
-                    iq=iq,
-                    mode=mode,
-                    rf_config=rf_config,
-                )
-
-            power_map[radio_id] = power_db
-            snr_map[radio_id] = snr_db
-
-        group_powers[group_name] = power_map
-        group_snrs[group_name] = snr_map
-
-        summary = summarize_group(power_map)
-        group_summaries[group_name] = summary
-
-        if summary.strongest_db == summary.strongest_db:
-            if summary.strongest_db > strongest_group_peak:
-                strongest_group_peak = summary.strongest_db
-                strongest_group = group_name
-
-        if group_signal_linear:
-            mean_signal_linear = float(np.mean(group_signal_linear))
-            group_mean_power_db[group_name] = float(
-                10.0 * np.log10(mean_signal_linear + 1e-12)
-            )
-        else:
-            group_mean_power_db[group_name] = float("nan")
-
-        if group_noise_linear:
-            mean_noise_linear = float(np.mean(group_noise_linear))
-            group_mean_noise_db[group_name] = float(
-                10.0 * np.log10(mean_noise_linear + 1e-12)
-            )
-        else:
-            group_mean_noise_db[group_name] = float("nan")
+    powers = {
+        group: {radio: m["power_db"] for radio, m in radios.items()}
+        for group, radios in metrics.items()
+    }
+    summaries = {group: summarize_group(power_map) for group, power_map in powers.items()}
+    valid_groups = [g for g, s in summaries.items() if not np.isnan(s.strongest_db)]
+    strongest_group = (
+        max(valid_groups, key=lambda g: summaries[g].strongest_db) if valid_groups else "---"
+    )
 
     return AcquisitionResult(
         timestamp=timestamp,
-        group_powers=group_powers,
-        group_snrs=group_snrs,
-        group_summaries=group_summaries,
+        group_powers=powers,
+        group_snrs={
+            group: {radio: m["snr_db"] for radio, m in radios.items()}
+            for group, radios in metrics.items()
+        },
+        group_summaries=summaries,
         strongest_group=strongest_group,
-        group_mean_power_db=group_mean_power_db,
-        group_mean_noise_db=group_mean_noise_db,
+        group_mean_power_db={
+            group: _mean_db([m["signal_power"] for m in radios.values()])
+            for group, radios in metrics.items()
+        },
+        group_mean_noise_db={
+            group: _mean_db([m["noise_power"] for m in radios.values()])
+            for group, radios in metrics.items()
+        },
+        group_metrics=metrics,
     )

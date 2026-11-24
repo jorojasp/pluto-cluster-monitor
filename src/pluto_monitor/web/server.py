@@ -8,14 +8,18 @@ from pathlib import Path
 from typing import Any
 
 import anyio
+import anyio.to_thread
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from pluto_monitor.config.loader import load_config
+from pluto_monitor.config.runtime import apply_overrides, split_overrides
+from pluto_monitor.dsp.modes import MODES
 from pluto_monitor.nodes.central_server import DistributedRxCoordinator
 from pluto_monitor.nodes.tx_node import LocalTxController
 from pluto_monitor.web.schemas import StartRequest
+from pluto_monitor.web.service import AcquisitionService
 
 STATIC_DIR = Path(__file__).parent / "static"
 CONFIG_PATH = os.environ.get("PLUTO_MONITOR_CONFIG", "configs/rpi_server.yaml")
@@ -29,7 +33,10 @@ class DistributedService:
         self.active_config = copy.deepcopy(self.base_config)
         self.coordinator = DistributedRxCoordinator(self.base_config)
         self.tx = LocalTxController(self.base_config)
+        # self.lock guards short state reads and writes. self._operation
+        # serializes Start and Stop, which wait for the network.
         self.lock = threading.RLock()
+        self._operation = threading.Lock()
         self.state = "idle"
         self.error: str | None = None
 
@@ -37,14 +44,14 @@ class DistributedService:
         self.coordinator.start()
 
     def close(self) -> None:
-        try:
-            self.tx.stop()
-        except Exception:
-            pass
-        try:
-            self.coordinator.stop_receivers(timeout=2.0)
-        except Exception:
-            pass
+        for name, action in (
+            ("TX", self.tx.stop),
+            ("RX", lambda: self.coordinator.stop_receivers(timeout=2.0)),
+        ):
+            try:
+                action()
+            except Exception as exc:
+                print(f"Could not stop {name} while closing: {exc}")
         self.coordinator.close()
 
     def load_config(self) -> dict[str, Any]:
@@ -53,98 +60,63 @@ class DistributedService:
             "rf": copy.deepcopy(self.base_config["rf"]),
         }
 
-    def _make_config(self, overrides: dict[str, Any]) -> dict[str, Any]:
-        config = copy.deepcopy(self.base_config)
-
-        app_fields = {"mode", "update_period_s", "transmit_enabled"}
-        rf_fields = {
-            "center_frequency_hz",
-            "sample_rate_hz",
-            "rx_gain_db",
-            "tx_gain_db",
-            "tone_frequency_hz",
-            "sps",
-            "data_bits",
-        }
-
-        for key, value in overrides.items():
-            if key in app_fields:
-                config["app"][key] = value
-            elif key in rf_fields:
-                config["rf"][key] = value
-
-        return config
-
     def start(self, overrides: dict[str, Any]) -> None:
+        app, rf = split_overrides(overrides)
+        config = apply_overrides(self.base_config, app, rf)
+
         with self.lock:
             if self.state in {"starting", "running", "stopping"}:
                 raise RuntimeError(f"Cannot start while state is {self.state}")
-
             self.state = "starting"
             self.error = None
-            config = self._make_config(overrides)
 
-            with self.coordinator.lock:
-                self.coordinator.latest_metrics.clear()
-
-            timeout = float(
-                config.get("runtime", {}).get("command_timeout_s", 30.0)
-            )
-
+        with self._operation:
             try:
-                self.coordinator.start_session(config["app"], config["rf"])
-                responses = self.coordinator.start_receivers(
-                    app=config["app"],
-                    rf=config["rf"],
-                    timeout=timeout,
-                )
-
-                failed = {
-                    node_id: response
-                    for node_id, response in responses.items()
-                    if not response.get("success")
-                }
-
-                if failed:
-                    details = "; ".join(
-                        f"{node}: {response.get('error', 'start failed')}"
-                        for node, response in failed.items()
-                    )
-                    try:
-                        self.coordinator.stop_receivers(timeout=3.0)
-                    except Exception:
-                        pass
-                    raise RuntimeError(f"RX start failed: {details}")
-
-                try:
-                    if config["app"].get("transmit_enabled", True):
-                        self.tx.start(app=config["app"], rf=config["rf"])
-                    else:
-                        self.tx.stop()
-                except Exception:
-                    try:
-                        self.coordinator.stop_receivers(timeout=3.0)
-                    except Exception:
-                        pass
-                    raise
-
+                self._start(config)
+            except Exception as exc:
+                self.coordinator.end_session("start_failed")
+                with self.lock:
+                    self.state = "error"
+                    self.error = str(exc)
+                raise
+            with self.lock:
                 self.active_config = config
                 self.state = "running"
 
+    def _start(self, config: dict[str, Any]) -> None:
+        timeout = float(config.get("runtime", {}).get("command_timeout_s", 30.0))
+        self.coordinator.start_session(config["app"], config["rf"])
+        try:
+            responses = self.coordinator.start_receivers(
+                app=config["app"], rf=config["rf"], timeout=timeout
+            )
+            failed = [
+                f"{node}: {response.get('error', 'start failed')}"
+                for node, response in responses.items()
+                if not response.get("success")
+            ]
+            if failed:
+                raise RuntimeError(f"RX start failed: {'; '.join(failed)}")
+
+            if config["app"].get("transmit_enabled", True):
+                self.tx.start(app=config["app"], rf=config["rf"])
+            else:
+                self.tx.stop()
+        except Exception:
+            try:
+                self.coordinator.stop_receivers(timeout=3.0)
             except Exception as exc:
-                self.coordinator.end_session("start_failed")
-                self.state = "error"
-                self.error = str(exc)
-                raise
+                print(f"Could not stop receivers after a failed start: {exc}")
+            raise
 
     def stop(self) -> None:
-        with self.lock:
-            if self.state == "idle":
-                return
+        with self._operation:
+            with self.lock:
+                if self.state == "idle":
+                    return
+                self.state = "stopping"
 
-            self.state = "stopping"
             errors = []
-
             try:
                 self.tx.stop()
             except Exception as exc:
@@ -153,29 +125,23 @@ class DistributedService:
             try:
                 responses = self.coordinator.stop_receivers(
                     timeout=float(
-                        self.base_config.get("runtime", {}).get(
-                            "command_timeout_s", 10.0
-                        )
+                        self.base_config.get("runtime", {}).get("command_timeout_s", 10.0)
                     )
                 )
-
-                for node_id, response in responses.items():
-                    if not response.get("success"):
-                        errors.append(
-                            f"{node_id}: "
-                            f"{response.get('error', 'stop failed')}"
-                        )
+                errors += [
+                    f"{node}: {response.get('error', 'stop failed')}"
+                    for node, response in responses.items()
+                    if not response.get("success")
+                ]
             except Exception as exc:
                 errors.append(f"RX: {exc}")
 
             self.coordinator.end_session("stop_failed" if errors else "stopped")
+            with self.lock:
+                self.state = "error" if errors else "idle"
+                self.error = "; ".join(errors) or None
             if errors:
-                self.state = "error"
-                self.error = "; ".join(errors)
-                raise RuntimeError(self.error)
-
-            self.state = "idle"
-            self.error = None
+                raise RuntimeError("; ".join(errors))
 
     def status(self) -> dict[str, Any]:
         with self.lock:
@@ -204,10 +170,24 @@ class DistributedService:
         return metrics
 
 
-service: DistributedService | None = None
+def create_service(config_path: str) -> DistributedService | AcquisitionService:
+    """Choose the provider from the configuration.
+
+    `clusters` describes radios attached to this PC and `network` describes
+    remote receiver nodes.
+    """
+    config = load_config(config_path)
+    if "clusters" in config:
+        return AcquisitionService(config_path)
+    if "network" in config:
+        return DistributedService(config_path)
+    raise ValueError(f"{config_path} needs a 'clusters' (local) or 'network' (distributed) section")
 
 
-def get_service() -> DistributedService:
+service: DistributedService | AcquisitionService | None = None
+
+
+def get_service() -> DistributedService | AcquisitionService:
     if service is None:
         raise RuntimeError("Service not initialized")
     return service
@@ -216,7 +196,7 @@ def get_service() -> DistributedService:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global service
-    service = DistributedService(CONFIG_PATH)
+    service = create_service(CONFIG_PATH)
     service.open()
 
     try:
@@ -244,7 +224,8 @@ def index() -> FileResponse:
 
 @app.get("/api/config")
 def get_config() -> dict[str, Any]:
-    return get_service().load_config()
+    modes = [{"name": m.name, "controls": m.controls} for m in MODES.values()]
+    return {**get_service().load_config(), "modes": modes}
 
 
 @app.get("/api/status")
@@ -263,6 +244,8 @@ def start(request: StartRequest) -> dict[str, Any]:
 
     try:
         srv.start(request.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         code = 409 if srv.state in {"starting", "running", "stopping"} else 500
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -292,10 +275,11 @@ async def ws_metrics(websocket: WebSocket) -> None:
         while True:
             srv = get_service()
 
-            await websocket.send_json({
-                "status": srv.status(),
-                "metrics": srv.metrics(),
-            })
+            # Collected in a thread: a slow lock must not stop the event loop.
+            payload = await anyio.to_thread.run_sync(
+                lambda srv=srv: {"status": srv.status(), "metrics": srv.metrics()}
+            )
+            await websocket.send_json(payload)
 
             await anyio.sleep(WS_PUSH_INTERVAL_S)
 

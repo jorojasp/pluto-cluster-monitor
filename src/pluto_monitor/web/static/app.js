@@ -22,6 +22,9 @@ const els = {
   legendNoise: document.getElementById("legend-noise"),
 };
 
+// Mode name -> control group ("tone" or "digital"), from /api/config.
+const modeControls = new Map([["SineWave", "tone"], ["BPSK", "digital"], ["QPSK", "digital"], ["16QAM", "digital"]]);
+
 const configFieldIds = [
   "center_frequency_hz",
   "sample_rate_hz",
@@ -53,8 +56,7 @@ function colorForGroup(name) {
 }
 
 function updateModeFieldVisibility() {
-  const mode = els.mode.value;
-  const isSine = mode === "SineWave";
+  const isSine = modeControls.get(els.mode.value) !== "digital";
   els.toneField.style.display = isSine ? "flex" : "none";
   els.digitalFields.style.display = isSine ? "none" : "grid";
 }
@@ -96,6 +98,13 @@ async function loadConfigDefaults() {
     document.getElementById("sps").value = rf.sps ?? "";
     document.getElementById("data_bits").value = rf.data_bits ?? "";
     document.getElementById("update_period_s").value = appCfg.update_period_s ?? "";
+    if (Array.isArray(config.modes) && config.modes.length) {
+      modeControls.clear();
+      els.mode.replaceChildren(...config.modes.map((mode) => {
+        modeControls.set(mode.name, mode.controls);
+        return new Option(mode.name, mode.name);
+      }));
+    }
     els.mode.value = appCfg.mode || "SineWave";
     document.getElementById("transmit_enabled").checked = appCfg.transmit_enabled ?? true;
     updateModeFieldVisibility();
@@ -216,6 +225,10 @@ function renderConnectedRadios(status) {
   if (!groups.size) els.connectedRadios.textContent = "No receiver groups available.";
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
 function renderGroups(metrics) {
   if (!metrics || Object.keys(metrics.groups).length === 0) {
     els.groupsGrid.innerHTML = '<div class="empty-state">No data yet.</div>';
@@ -223,7 +236,7 @@ function renderGroups(metrics) {
     return;
   }
 
-  els.overallBanner.innerHTML = `Strongest group right now: <strong>${metrics.strongest_group}</strong>`;
+  els.overallBanner.innerHTML = `Strongest group right now: <strong>${escapeHtml(metrics.strongest_group)}</strong>`;
 
   const cards = [];
   for (const [groupName, group] of Object.entries(metrics.groups)) {
@@ -237,7 +250,8 @@ function renderGroups(metrics) {
           : "";
         const power = radio.power_db === null ? "—" : radio.power_db.toFixed(2);
         const snr = radio.snr_db === null ? "—" : radio.snr_db.toFixed(2);
-        return `<tr class="${rowClass}"><td>${radio.serial || radio.uri}${badge}</td><td>${power}</td><td>${snr}</td></tr>`;
+        const ber = Number.isFinite(radio.ber) ? radio.ber.toExponential(1) : "—";
+        return `<tr class="${rowClass}"><td>${escapeHtml(radio.serial || radio.uri)}${badge}</td><td>${power}</td><td>${snr}</td><td>${ber}</td></tr>`;
       })
       .join("");
 
@@ -246,10 +260,10 @@ function renderGroups(metrics) {
 
     cards.push(`
       <div class="group-card">
-        <h3>Group ${groupName}</h3>
+        <h3>Group ${escapeHtml(groupName)}</h3>
         <div class="group-summary">mean power=${meanPower} dB · mean noise=${meanNoise} dB</div>
         <table>
-          <thead><tr><th>Radio</th><th>Power (dB)</th><th>Est. SNR (dB)</th></tr></thead>
+          <thead><tr><th>Radio</th><th>Power (dB)</th><th>Est. SNR (dB)</th><th>BER</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -353,7 +367,7 @@ function renderLegend(container, store) {
   container.innerHTML = names
     .map(
       (name) =>
-        `<span class="legend-item"><span class="legend-swatch" style="background:${colorForGroup(name)}"></span>${name}</span>`
+        `<span class="legend-item"><span class="legend-swatch" style="background:${colorForGroup(name)}"></span>${escapeHtml(name)}</span>`
     )
     .join("");
 }

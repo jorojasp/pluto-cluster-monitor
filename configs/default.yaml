@@ -32,3 +32,7 @@ runtime:
   export_dir: data/exports
   log_dir: data/logs
   max_history_points: 100
+  # Raw IQ captures for offline processing (local modes only).
+  save_iq: false
+  iq_dir: data/raw
+  iq_max_captures: 500

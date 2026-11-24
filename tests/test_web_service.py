@@ -34,11 +34,11 @@ if "adi" not in sys.modules:
 from pluto_monitor.hardware.discovery import ResolvedRadioTopology
 from pluto_monitor.services.acquisition import AcquisitionResult
 from pluto_monitor.services.clustering import GroupSummary
+from pluto_monitor.config.runtime import apply_overrides, split_overrides
 from pluto_monitor.web import service as service_module
 from pluto_monitor.web.service import (
     AcquisitionService,
     ServiceStateError,
-    _apply_overrides,
     _result_to_json,
     _safe_float,
 )
@@ -64,7 +64,7 @@ def test_safe_float_handles_none_input() -> None:
     assert _safe_float(None) is None
 
 
-# --- _apply_overrides ----------------------------------------------------
+# --- runtime overrides ---------------------------------------------------
 
 
 def _base_config() -> dict:
@@ -80,37 +80,43 @@ def _base_config() -> dict:
             "data_bits": 4096,
             "tone_frequency_hz": 10_000,
         },
+        "runtime": {},
     }
 
 
-def test_apply_overrides_updates_mode_and_rf_fields() -> None:
-    config = _base_config()
-    _apply_overrides(
-        config,
-        {"mode": "BPSK", "rx_gain_db": 40, "center_frequency_hz": 2_450_000_000},
-    )
+def _override(**overrides) -> dict:
+    return apply_overrides(_base_config(), *split_overrides(overrides))
+
+
+def test_overrides_update_mode_and_rf_fields() -> None:
+    config = _override(mode="BPSK", rx_gain_db=40, center_frequency_hz=2_450_000_000)
     assert config["app"]["mode"] == "BPSK"
     assert config["rf"]["rx_gain_db"] == 40.0
     assert config["rf"]["center_frequency_hz"] == 2_450_000_000
 
 
-def test_apply_overrides_rejects_invalid_mode() -> None:
-    config = _base_config()
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"mode": "NOT_A_MODE"},
+        {"update_period_s": 0},
+        {"update_period_s": float("nan")},
+        {"tx_gain_db": 5},
+        {"center_frequency_hz": 100},
+        {"mode": "16QAM", "data_bits": 1023},
+        {"mode": "QPSK", "sps": 1},
+        {"tone_frequency_hz": 900_000},
+    ],
+)
+def test_invalid_overrides_are_rejected(bad: dict) -> None:
     with pytest.raises(ValueError):
-        _apply_overrides(config, {"mode": "NOT_A_MODE"})
+        _override(**bad)
 
 
-def test_apply_overrides_rejects_non_positive_update_period() -> None:
-    config = _base_config()
-    with pytest.raises(ValueError):
-        _apply_overrides(config, {"update_period_s": 0})
-
-
-def test_apply_overrides_leaves_config_untouched_when_no_overrides() -> None:
-    config = _base_config()
-    original = _base_config()
-    _apply_overrides(config, {})
-    assert config == original
+def test_overrides_never_change_radio_wiring_or_the_original() -> None:
+    base = _base_config()
+    result = apply_overrides(base, *split_overrides({"clusters": {}, "serial": "x"}))
+    assert result == base and base == _base_config()
 
 
 # --- _result_to_json -----------------------------------------------------
@@ -220,9 +226,6 @@ def patched_service(monkeypatch: pytest.MonkeyPatch) -> AcquisitionService:
     monkeypatch.setattr(
         service_module, "build_transmitter", lambda config, resolved: _FakeTransmitter()
     )
-    monkeypatch.setattr(
-        service_module, "build_tx_waveform", lambda transmitter, config: ("SineWave", None)
-    )
     monkeypatch.setattr(service_module, "acquire_once", lambda **kwargs: _canned_result())
 
     return svc
@@ -288,3 +291,104 @@ def test_start_failure_marks_error_state_and_cleans_up(
     status = patched_service.get_status()
     assert status.state == "error"
     assert "no radios connected" in status.error
+
+
+def test_acquisition_failure_stops_the_transmitter(
+    monkeypatch: pytest.MonkeyPatch, patched_service: AcquisitionService
+) -> None:
+    tx = _FakeTransmitter()
+    monkeypatch.setattr(service_module, "build_transmitter", lambda config, resolved: tx)
+
+    def _boom(**kwargs):
+        raise RuntimeError("radio unplugged")
+
+    monkeypatch.setattr(service_module, "acquire_once", _boom)
+    patched_service.start({})
+    patched_service._thread.join(timeout=5)
+    assert tx.closed
+    assert patched_service.status()["state"] == "error"
+    assert patched_service.status()["tx"]["state"] == "idle"
+
+
+def test_transmit_disabled_never_opens_the_transmitter(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pluto_monitor.services import local_radios
+
+    def _forbidden(*args):
+        raise AssertionError("transmitter opened")
+
+    monkeypatch.setattr(local_radios, "connect_transmitter", _forbidden)
+    config = _base_config()
+    config["app"]["transmit_enabled"] = False
+    assert local_radios.build_transmitter(config, None) is None
+
+
+def test_provider_follows_the_configuration(tmp_path) -> None:
+    from pluto_monitor.web.server import create_service
+
+    local = tmp_path / "local.yaml"
+    local.write_text("clusters: {}\n", encoding="utf-8")
+    assert isinstance(create_service(str(local)), AcquisitionService)
+    other = tmp_path / "other.yaml"
+    other.write_text("app: {}\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        create_service(str(other))
+
+
+# --- hardware helpers ------------------------------------------------------
+
+
+def test_failed_connection_closes_the_receivers_already_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pluto_monitor.hardware import factory
+
+    opened = []
+
+    class _Receiver:
+        def __init__(self, config) -> None:
+            self.config = config
+            self.closed = False
+
+        def connect(self) -> None:
+            if self.config.radio_id == "bad":
+                raise RuntimeError("no radio")
+            opened.append(self)
+
+        def close(self) -> None:
+            self.closed = True
+
+    monkeypatch.setattr(factory, "PlutoReceiver", _Receiver)
+    config = _base_config()
+    config["app"]["mode"] = "BPSK"
+    with pytest.raises(RuntimeError):
+        factory.connect_receivers(["good", "bad"], config)
+    assert [r.closed for r in opened] == [True]
+    assert opened[0].config.samples_per_frame > 2 * 4096 * 2
+
+
+def test_analog_bandwidth_follows_the_sample_rate() -> None:
+    from pluto_monitor.hardware.receiver import analog_bandwidth
+
+    assert analog_bandwidth(None, 1_000_000) == 1_000_000
+    assert analog_bandwidth(None, 100_000) == 200_000
+    assert analog_bandwidth(5_000_000, 1_000_000) == 5_000_000
+
+
+def test_iq_recorder_saves_captures_up_to_the_limit(tmp_path) -> None:
+    import numpy as np
+
+    from pluto_monitor.services.iq_recorder import recorder_from_config
+
+    config = _base_config()
+    assert recorder_from_config(config) is None
+    config["runtime"] = {"save_iq": True, "iq_dir": str(tmp_path), "iq_max_captures": 2}
+    recorder = recorder_from_config(config)
+    iq = np.arange(8) + 1j
+    for k in range(4):
+        recorder(float(k), "A", "usb:1", iq)
+    files = sorted(recorder.path.glob("*.npz"))
+    assert len(files) == 2
+    with np.load(files[1]) as data:
+        assert np.array_equal(data["iq"], iq.astype(np.complex64))
+        assert float(data["timestamp"]) == 1.0
+    assert (recorder.path / "config.json").exists()

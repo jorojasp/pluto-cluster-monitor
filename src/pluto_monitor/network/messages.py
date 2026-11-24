@@ -1,12 +1,7 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
-
-
-def now_ts() -> float:
-    return time.time()
 
 
 def dumps_message(message: dict[str, Any]) -> bytes:

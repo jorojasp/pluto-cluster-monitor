@@ -4,6 +4,19 @@ import numpy as np
 from scipy.optimize import minimize_scalar
 
 
+def build_tone(tone_frequency_hz: float, sample_rate_hz: float, num_samples: int) -> np.ndarray:
+    """Complex tone with a whole number of cycles in the repeated TX buffer.
+
+    The frequency is rounded to the nearest buffer bin; otherwise every
+    repetition would start with a phase jump and radiate spurs.
+    """
+    cycles = round(tone_frequency_hz * num_samples / sample_rate_hz)
+    if cycles == 0:
+        cycles = 1 if tone_frequency_hz >= 0 else -1
+    n = np.arange(num_samples)
+    return np.exp(2j * np.pi * cycles * n / num_samples).astype(np.complex64)
+
+
 def compute_sinewave_detailed_metrics(
     iq: np.ndarray,
     eps: float = 1e-12,
@@ -73,8 +86,3 @@ def compute_sinewave_detailed_metrics(
         tone_frequency_hz=float(estimate.x * sample_rate_hz),
     )
     return result
-
-
-def compute_sinewave_metrics(iq: np.ndarray, eps: float = 1e-12) -> tuple[float, float]:
-    metrics = compute_sinewave_detailed_metrics(iq, eps=eps)
-    return metrics["power_db"], metrics["snr_db"]

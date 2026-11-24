@@ -87,10 +87,6 @@ def get_required_topology(config: dict) -> RadioTopology:
     )
 
 
-def discover_configured_radios(config: dict) -> list[dict[str, str]]:
-    return scan_connected_radios()
-
-
 def resolve_uri_from_serial(target_serial: str) -> str:
     """Resolve a single serial against a fresh scan.
 

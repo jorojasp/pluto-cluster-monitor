@@ -2,22 +2,18 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
-from pluto_monitor.app import build_receivers, build_transmitter, build_tx_waveform
 from pluto_monitor.config.loader import load_config
+from pluto_monitor.config.runtime import apply_overrides, split_overrides
 from pluto_monitor.hardware.discovery import resolve_topology, validate_required_radios
+from pluto_monitor.hardware.factory import close_receivers
 from pluto_monitor.hardware.receiver import PlutoReceiver
 from pluto_monitor.hardware.transmitter import PlutoTransmitter
-from pluto_monitor.models.history import MetricHistory
 from pluto_monitor.services.acquisition import AcquisitionResult, acquire_once
-
-VALID_MODES = {"SineWave", "BPSK", "QPSK", "16QAM"}
-
-_RF_INT_FIELDS = ("center_frequency_hz", "sample_rate_hz", "sps", "data_bits")
-_RF_FLOAT_FIELDS = ("rx_gain_db", "tx_gain_db", "tone_frequency_hz")
-
+from pluto_monitor.services.iq_recorder import recorder_from_config
+from pluto_monitor.services.local_radios import build_receivers, build_transmitter
 
 class ServiceStateError(RuntimeError):
     """Raised when an operation is invalid for the service's current state."""
@@ -49,41 +45,6 @@ def _safe_float(value: Any) -> Optional[float]:
     return parsed
 
 
-def _apply_overrides(config: dict[str, Any], overrides: dict[str, Any]) -> None:
-    """Apply optional UI overrides on top of a freshly loaded YAML config.
-
-    Radio wiring (which serials belong to which group, transmitter serial)
-    intentionally stays in the YAML file for now; only RF/mode/timing
-    parameters are adjustable from the web UI in this first version.
-    """
-    mode = overrides.get("mode")
-    if mode is not None:
-        if mode not in VALID_MODES:
-            raise ValueError(
-                f"Unsupported mode '{mode}'. Valid modes: {sorted(VALID_MODES)}"
-            )
-        config["app"]["mode"] = mode
-
-    update_period_s = overrides.get("update_period_s")
-    if update_period_s is not None:
-        update_period_s = float(update_period_s)
-        if update_period_s <= 0:
-            raise ValueError("update_period_s must be > 0")
-        config["app"]["update_period_s"] = update_period_s
-
-    rf = config["rf"]
-
-    for field_name in _RF_INT_FIELDS:
-        value = overrides.get(field_name)
-        if value is not None:
-            rf[field_name] = int(value)
-
-    for field_name in _RF_FLOAT_FIELDS:
-        value = overrides.get(field_name)
-        if value is not None:
-            rf[field_name] = float(value)
-
-
 def _result_to_json(
     result: AcquisitionResult,
     radio_labels: dict[str, str],
@@ -94,14 +55,18 @@ def _result_to_json(
         snr_map = result.group_snrs.get(group_name, {})
         summary = result.group_summaries.get(group_name)
 
+        details = result.group_metrics.get(group_name, {})
         radios = []
         for radio_uri, power_db in power_map.items():
+            extra = details.get(radio_uri, {})
             radios.append(
                 {
                     "uri": radio_uri,
                     "serial": radio_labels.get(radio_uri),
                     "power_db": _safe_float(power_db),
                     "snr_db": _safe_float(snr_map.get(radio_uri)),
+                    "ber": _safe_float(extra.get("ber")),
+                    "cfo_hz": _safe_float(extra.get("cfo_hz")),
                     "is_strongest": bool(
                         summary is not None and radio_uri == summary.strongest_label
                     ),
@@ -156,12 +121,39 @@ class AcquisitionService:
 
         self._mode: Optional[str] = None
         self._latest_result: Optional[AcquisitionResult] = None
-        self._history = MetricHistory()
+        self._recorder = None
 
     # ---- config -------------------------------------------------------
 
     def load_base_config(self) -> dict[str, Any]:
         return load_config(self._config_path)
+
+    # ---- provider interface used by the web server ----------------------
+
+    def open(self) -> None:
+        self.load_base_config()  # fail at startup, not on the first Start
+
+    def close(self) -> None:
+        if self.get_status().state in ("running", "error"):
+            self.stop()
+
+    def load_config(self) -> dict[str, Any]:
+        config = self.load_base_config()
+        return {"app": config["app"], "rf": config["rf"]}
+
+    def status(self) -> dict[str, Any]:
+        status = asdict(self.get_status())
+        with self._lock:
+            status["tx"] = {"state": "running" if self._transmitter else "idle"}
+        status["session_id"] = None
+        return status
+
+    def metrics(self) -> Optional[dict[str, Any]]:
+        return self.get_snapshot()
+
+    @property
+    def state(self) -> str:
+        return self.get_status().state
 
     # ---- status / data for the API -------------------------------------
 
@@ -171,7 +163,7 @@ class AcquisitionService:
                 state=self._state,
                 mode=self._mode,
                 error=self._error,
-                connected_radios=list(self._receivers.keys()),
+                connected_radios=list(self._receivers),
                 groups={k: list(v) for k, v in self._resolved_groups.items()},
             )
 
@@ -185,36 +177,32 @@ class AcquisitionService:
 
     def start(self, overrides: dict[str, Any]) -> None:
         with self._lock:
-            if self._state in ("starting", "running"):
+            if self._state in ("starting", "running", "stopping"):
                 raise ServiceStateError(f"Service already {self._state}")
             self._state = "starting"
             self._error = None
 
         try:
-            config = self.load_base_config()
-            _apply_overrides(config, overrides)
+            app, rf = split_overrides(overrides)
+            config = apply_overrides(self.load_base_config(), app, rf)
             validate_required_radios(config)
             resolved = resolve_topology(config)
+            self._recorder = recorder_from_config(config)
 
-            receivers, resolved_groups = build_receivers(config, resolved)
-            transmitter = build_transmitter(config, resolved)
-            mode, _tx_debug = build_tx_waveform(transmitter, config)
-
-            radio_labels = {
-                uri: serial for serial, uri in resolved.serial_to_uri.items()
-            }
+            # Store each resource as soon as it exists, so a later failure
+            # always closes it and never leaves the transmitter on.
+            self._receivers, resolved_groups = build_receivers(config, resolved)
+            self._transmitter = build_transmitter(config, resolved)
 
             with self._lock:
                 self._config = config
-                self._receivers = receivers
-                self._transmitter = transmitter
                 self._resolved_groups = resolved_groups
-                self._radio_labels = radio_labels
-                self._mode = mode
+                self._radio_labels = {
+                    uri: serial for serial, uri in resolved.serial_to_uri.items()
+                }
+                self._mode = str(config["app"]["mode"])
                 self._latest_result = None
-                self._history = MetricHistory(
-                    max_points=int(config["runtime"].get("max_history_points", 100))
-                )
+                self._state = "running"
 
             self._stop_event.clear()
             self._thread = threading.Thread(
@@ -222,14 +210,11 @@ class AcquisitionService:
             )
             self._thread.start()
 
-            with self._lock:
-                self._state = "running"
-
         except Exception as exc:
+            self._cleanup_hardware()
             with self._lock:
                 self._state = "error"
                 self._error = str(exc)
-            self._cleanup_hardware()
             raise
 
     def stop(self) -> None:
@@ -249,28 +234,25 @@ class AcquisitionService:
 
         with self._lock:
             self._state = "idle"
+            self._error = None
             self._thread = None
             self._mode = None
             self._latest_result = None
 
     def _cleanup_hardware(self) -> None:
         with self._lock:
-            receivers = list(self._receivers.values())
+            receivers = self._receivers
             transmitter = self._transmitter
             self._receivers = {}
             self._transmitter = None
 
-        for receiver in receivers:
-            try:
-                receiver.close()
-            except Exception:
-                pass
-
+        # Stop radiating first, whatever happens with the receivers.
         if transmitter is not None:
             try:
                 transmitter.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"Warning while closing transmitter: {exc}")
+        close_receivers(receivers)
 
     def _run_loop(self) -> None:
         with self._lock:
@@ -293,16 +275,17 @@ class AcquisitionService:
                     receivers=receivers,
                     mode=mode,
                     rf_config=config["rf"],
+                    iq_sink=self._recorder,
                 )
             except Exception as exc:  # keep the thread from dying silently
                 with self._lock:
                     self._state = "error"
                     self._error = str(exc)
+                self._cleanup_hardware()  # never keep transmitting unattended
                 return
 
             with self._lock:
                 self._latest_result = result
-                self._history.append(result.timestamp, result.group_summaries)
 
             elapsed = time.monotonic() - t0
             self._stop_event.wait(max(0.0, update_period_s - elapsed))

@@ -1,7 +1,12 @@
-"""Run the distributed dashboard and local TX controller on the server Pi.
+"""Run the web dashboard.
 
-Receiver processes must already be running on rxpi1 and rxpi2.
-Usage: python scripts/run_web.py --config configs/rpi_server.yaml --port 8000
+Radios attached to this PC:
+    python scripts/run_web.py --config configs/default.yaml
+Distributed Raspberry Pi nodes (receiver processes must already be running):
+    python scripts/run_web.py --config configs/rpi_server.yaml --host 0.0.0.0
+
+There is no login: anyone who can reach the port can start the transmitter.
+The default host only accepts connections from this machine.
 """
 from __future__ import annotations
 
@@ -11,10 +16,10 @@ import os
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run the Pluto Cluster Monitor distributed web server"
+        description="Run the Pluto Cluster Monitor web dashboard"
     )
     parser.add_argument("--config", default="configs/rpi_server.yaml", help="Path to YAML config")
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
         "--reload", action="store_true", help="Enable uvicorn autoreload (development only)"

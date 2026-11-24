@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pluto_monitor.dsp.bpsk import build_bpsk_tx_waveform
-from pluto_monitor.dsp.qpsk import build_qpsk_tx_waveform
-from pluto_monitor.dsp.qam16 import build_qam16_tx_waveform
 
 import numpy as np
+
+from pluto_monitor.hardware.receiver import analog_bandwidth
 
 
 @dataclass
@@ -14,6 +13,8 @@ class TransmitterConfig:
     center_frequency_hz: int
     sample_rate_hz: int
     tx_gain_db: float
+    rf_bandwidth_hz: int | None = None  # defaults to the sample rate
+
 
 class PlutoTransmitter:
     def __init__(self, config: TransmitterConfig) -> None:
@@ -26,6 +27,9 @@ class PlutoTransmitter:
         sdr = adi.Pluto(self.config.radio_id)
         sdr.tx_lo = int(self.config.center_frequency_hz)
         sdr.sample_rate = int(self.config.sample_rate_hz)
+        sdr.tx_rf_bandwidth = analog_bandwidth(
+            self.config.rf_bandwidth_hz, self.config.sample_rate_hz
+        )
         sdr.tx_hardwaregain_chan0 = float(self.config.tx_gain_db)
         sdr.tx_cyclic_buffer = True
         self._device = sdr
@@ -56,56 +60,14 @@ class PlutoTransmitter:
         self._device.tx_destroy_buffer()
         self._device.tx(iq)
 
-    def build_tone(self,
-        tone_frequency_hz: float,
-        num_samples: int,
-    ) -> np.ndarray:
-        sample_rate = self.config.sample_rate_hz
-        t = np.arange(num_samples, dtype=np.float64) / sample_rate
-        tone = np.exp(1j * 2.0 * np.pi * tone_frequency_hz * t)
-        return tone.astype(np.complex64)
-    
-    def build_bpsk(
-        self,
-        data_bits: int,
-        sps: int,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        tx_waveform, tx_bits, tx_symbols = build_bpsk_tx_waveform(
-            data_bits=data_bits,
-            sps=sps,
-        )
-        return tx_waveform, tx_bits, tx_symbols
-    
-    def build_qpsk(
-        self,
-        data_bits: int,
-        sps: int,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        tx_waveform, tx_bits, tx_symbols = build_qpsk_tx_waveform(
-            data_bits=data_bits,
-            sps=sps,
-        )
-        return tx_waveform, tx_bits, tx_symbols
-    
-    def build_qam16(
-        self,
-        data_bits: int,
-        sps: int,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        tx_waveform, tx_bits, tx_symbols = build_qam16_tx_waveform(
-            data_bits=data_bits,
-            sps=sps,
-        )
-        return tx_waveform, tx_bits, tx_symbols
-
     def stop(self) -> None:
         if self._device is None:
             return
 
         try:
             self._device.tx_destroy_buffer()
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"Could not stop transmitter {self.config.radio_id}: {exc}")
 
     def close(self) -> None:
         self.stop()

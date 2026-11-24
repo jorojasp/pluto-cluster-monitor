@@ -102,10 +102,7 @@ class DistributedRxCoordinator:
         self.end_session("closed")
         self.running = False
 
-        try:
-            self.sock.close()
-        except Exception:
-            pass
+        self.sock.close()
 
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=1.0)
@@ -196,34 +193,32 @@ class DistributedRxCoordinator:
         if rf is not None:
             message["rf"] = rf
 
-        expected = []
+        expected = [(node_id, command) for node_id in self.nodes]
+        with self.condition:
+            for key in expected:
+                self.command_responses.pop(key, None)
+
+        # Name resolution can block for seconds, so send without the lock. A
+        # node that cannot be reached must not prevent the others from acting.
+        payload = dumps_message(message)
+        for node_id, node in self.nodes.items():
+            try:
+                self.sock.sendto(payload, (node["host"], node["control_port"]))
+            except OSError as exc:
+                with self.condition:
+                    self.command_responses[(node_id, command)] = {
+                        "type": "rx_command_response",
+                        "command": command,
+                        "node_id": node_id,
+                        "success": False,
+                        "state": "unreachable",
+                        "error": f"Cannot reach {node['host']}: {exc}",
+                    }
 
         with self.condition:
-            for node_id in self.nodes:
-                key = (node_id, command)
-                self.command_responses.pop(key, None)
-                expected.append(key)
-
-            payload = dumps_message(message)
-
-            for node in self.nodes.values():
-                self.sock.sendto(
-                    payload,
-                    (node["host"], node["control_port"]),
-                )
-
             deadline = time.monotonic() + timeout
 
-            while True:
-                missing = [
-                    key
-                    for key in expected
-                    if key not in self.command_responses
-                ]
-
-                if not missing:
-                    break
-
+            while any(key not in self.command_responses for key in expected):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
@@ -271,15 +266,6 @@ class DistributedRxCoordinator:
     ) -> dict[str, dict[str, Any]]:
         return self._command_all(
             "stop",
-            timeout=timeout,
-        )
-
-    def ping_receivers(
-        self,
-        timeout: float = 3.0,
-    ) -> dict[str, dict[str, Any]]:
-        return self._command_all(
-            "ping",
             timeout=timeout,
         )
 
