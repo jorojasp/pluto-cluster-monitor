@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 
 
 def main() -> None:
@@ -25,6 +26,11 @@ def main() -> None:
         "--reload", action="store_true", help="Enable uvicorn autoreload (development only)"
     )
     args = parser.parse_args()
+    if not Path(args.config).is_file():
+        parser.error(
+            f"{args.config} not found from {Path.cwd()}. Run from the repository root, or "
+            "create it with: cp configs/default.yaml configs/local.yaml"
+        )
 
     os.environ["PLUTO_MONITOR_CONFIG"] = args.config
 

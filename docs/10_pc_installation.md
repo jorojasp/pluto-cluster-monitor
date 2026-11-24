@@ -86,8 +86,8 @@ python scripts/run_web.py --config configs/default.yaml   # same radios in the b
 
 Put the serials reported by `list_radios.py` into `configs/default.yaml`
 (`clusters.groups.*.radio_serials`, `clusters.transmitter_serial`).
-Another file can be used with `--config`, for example `configs/local.yaml`, which
-git ignores. A `local:` context with serial `UNKNOWN` is the PC's
+For a machine-specific setup, create `configs/local.yaml` (git ignores it) with
+`cp configs/default.yaml configs/local.yaml`, edit it and pass it with `--config`. A `local:` context with serial `UNKNOWN` is the PC's
 own sensors, not a Pluto.
 
 ## Troubleshooting
